@@ -93,10 +93,26 @@ def baca_data():
     
     print(f"🎮 Data Receiver (RC):")
     if data_rc:
-        for i in range(1, 11): # Menampilkan CH1 - CH8
+        for i in range(1, 11): # Menampilkan CH1 - CH10
             val = getattr(data_rc, f'chan{i}_raw', 'N/A')
             label = " [ARMING SWITCH]" if i == 7 else ""
             print(f"   CH{i} (PWM): {val}{label}")
+            
+        # Logika Auto-Arming/Disarming via Script ketika CH7 diaktifkan
+        ch7_pwm = getattr(data_rc, 'chan7_raw', 0)
+        if isinstance(ch7_pwm, int) and ch7_pwm > 0:
+            if ch7_pwm > 1900 and not is_armed:
+                print("\n⚠️ [AUTO] CH7 mendeteksi >1900! Mengirim perintah ARMING otomatis...")
+                master.mav.command_long_send(
+                    master.target_system, master.target_component,
+                    mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0
+                )
+            elif ch7_pwm < 1100 and is_armed:
+                print("\n⚠️ [AUTO] CH7 mendeteksi <1100! Mengirim perintah DISARMING otomatis...")
+                master.mav.command_long_send(
+                    master.target_system, master.target_component,
+                    mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 0, 0, 0, 0, 0, 0, 0
+                )
     else:
         print("   Belum ada data Receiver / Remote tidak nyala")
         
