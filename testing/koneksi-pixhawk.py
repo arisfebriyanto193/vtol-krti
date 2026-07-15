@@ -91,7 +91,7 @@ def baca_data():
     else:
         print(f"🛑 Status Drone  : DISARMED (Aman)")
     
-    print(f"🎮 Data Receiver (RC):")
+    print(f"🎮 Data Receiver (RC):") 
     if data_rc:
         for i in range(1, 11): # Menampilkan CH1 - CH10
             val = getattr(data_rc, f'chan{i}_raw', 'N/A')
