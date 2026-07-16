@@ -11,4 +11,4 @@ PIXHAWK_BAUD = 115200
 
 # Konfigurasi Kamera
 # 0 biasanya untuk kamera bawaan/laptop, 1 untuk USB camera eksternal
-CAMERA_INDEX = 1
+CAMERA_INDEX = 0
