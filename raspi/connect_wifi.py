@@ -6,6 +6,8 @@ def run_ssh():
     child = pexpect.spawn('ssh -o StrictHostKeyChecking=no pi@192.168.6.200', encoding='utf-8')
     child.logfile = sys.stdout
     
+
+    
     i = child.expect(['password:', pexpect.EOF, pexpect.TIMEOUT], timeout=10)
     if i == 0:
         # User file says 'ppi', but user prompt said 'pi'. I'll try 'ppi' first, if fails, 'pi'
