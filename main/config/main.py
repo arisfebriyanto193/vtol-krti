@@ -6,6 +6,8 @@ Konfigurasi Global untuk sistem KRTI VTOL.
 # Ganti '/dev/ttyACM0' dengan 'COMx' jika menggunakan Windows
 PIXHAWK_PORT = '/dev/ttyACM0'
 
+
+
 # Baudrate koneksi Pixhawk
 PIXHAWK_BAUD = 115200
 

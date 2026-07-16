@@ -9,6 +9,7 @@ python3 koneksi-pixhawk.py --connect /dev/ttyACM0
 from pymavlink import mavutil
 import time
 import argparse
+import math
 
 # Setup argumen untuk port koneksi (berdasarkan deteksi dmesg/lsusb biasanya /dev/ttyACM0)
 parser = argparse.ArgumentParser(description='Komunikasi Raspi - Pixhawk (Pymavlink)')
@@ -52,6 +53,8 @@ def baca_data():
     data_gps = None
     data_compass = None
     data_rc = None
+    data_attitude = None
+    data_raw_imu = None
     flight_mode = None
     is_armed = False
     
@@ -59,7 +62,7 @@ def baca_data():
     timeout = time.time() + 1.5
     while time.time() < timeout:
         # Menangkap paket spesifik (ditambahkan RC_CHANNELS_RAW untuk Pixhawk lawas/tertentu)
-        msg = master.recv_match(type=['GLOBAL_POSITION_INT', 'VFR_HUD', 'RC_CHANNELS', 'RC_CHANNELS_RAW', 'HEARTBEAT'], blocking=True, timeout=0.1)
+        msg = master.recv_match(type=['GLOBAL_POSITION_INT', 'VFR_HUD', 'RC_CHANNELS', 'RC_CHANNELS_RAW', 'HEARTBEAT', 'ATTITUDE', 'RAW_IMU'], blocking=True, timeout=0.1)
         if not msg:
             continue
             
@@ -72,9 +75,23 @@ def baca_data():
             data_compass = msg.heading
         elif msg.get_type() in ['RC_CHANNELS', 'RC_CHANNELS_RAW']:
             data_rc = msg
+        elif msg.get_type() == 'ATTITUDE':
+            data_attitude = msg
+        elif msg.get_type() == 'RAW_IMU':
+            data_raw_imu = msg
             
     # Cetak Hasilnya
     print(f"🧭 Kompas (Heading): {data_compass if data_compass is not None else 'Belum ada data'} derajat")
+    
+    if data_attitude:
+        roll = math.degrees(data_attitude.roll)
+        pitch = math.degrees(data_attitude.pitch)
+        yaw = math.degrees(data_attitude.yaw)
+        yaw = yaw if yaw >= 0 else 360 + yaw
+        print(f"📐 Attitude: Roll={roll:.2f}°, Pitch={pitch:.2f}°, Yaw={yaw:.2f}°")
+        
+    if data_raw_imu:
+        print(f"🧲 Magnetometer (Raw): X={data_raw_imu.xmag}, Y={data_raw_imu.ymag}, Z={data_raw_imu.zmag}")
     
     if data_gps:
         lat = data_gps.lat / 1e7
