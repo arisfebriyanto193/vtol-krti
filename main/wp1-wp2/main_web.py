@@ -114,7 +114,7 @@ def drone_mission_task(connect_port, baud, camera_index):
         print(f"❌ Gagal membuka kamera.")
         return
 
-    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_ARUCO_ORIGINAL)
+    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_7X7_50)
     aruco_params = cv2.aruco.DetectorParameters()
     try:
         aruco_params.minMarkerPerimeterRate = 0.03
