@@ -11,7 +11,7 @@ import argparse
 import numpy as np
 import threading
 from pymavlink import mavutil
-from flask import Flask, Response
+from flask import Flask, Response, jsonify
 
 # Menambahkan path folder 'main' ke sys.path agar bisa membaca folder 'config'
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -38,9 +38,29 @@ STATE_CENTER_BOX = 2
 STATE_DROP_PAYLOAD = 3
 STATE_HOVER_DONE = 4
 
+STATE_NAMES = {
+    STATE_WAIT_START: "WAIT START",
+    STATE_HOVER_WP1: "HOVER WP1",
+    STATE_MOVE_WP2: "MOVE WP2",
+    STATE_CENTER_BOX: "CENTERING BOX",
+    STATE_DROP_PAYLOAD: "DROP PAYLOAD",
+    STATE_HOVER_DONE: "HOVER DONE"
+}
+
 app = Flask(__name__)
 output_frame = None
 lock = threading.Lock()
+
+# Global variable for telemetry
+telemetry_data = {
+    "altitude": 0.0,
+    "battery_voltage": 0.0,
+    "battery_remaining": 0,
+    "flight_mode": "UNKNOWN",
+    "state": "WAIT START",
+    "ch8": 0,
+    "groundspeed": 0.0
+}
 
 def connect_pixhawk(port, baudrate):
     print(f"Mencoba terhubung ke Pixhawk di {port} (Baudrate: {baudrate})...")
@@ -150,8 +170,23 @@ def drone_mission_task(connect_port, baud, camera_index):
             msg_type = msg.get_type()
             if msg_type == 'GLOBAL_POSITION_INT':
                 current_alt = msg.relative_alt / 1000.0
+                telemetry_data["altitude"] = current_alt
             elif msg_type == 'RC_CHANNELS':
                 ch8_value = msg.chan8_raw
+                telemetry_data["ch8"] = ch8_value
+            elif msg_type == 'SYS_STATUS':
+                telemetry_data["battery_voltage"] = msg.voltage_battery / 1000.0
+                telemetry_data["battery_remaining"] = msg.battery_remaining
+            elif msg_type == 'HEARTBEAT':
+                if master.mode_mapping():
+                    for name, code in master.mode_mapping().items():
+                        if code == msg.custom_mode:
+                            telemetry_data["flight_mode"] = name
+                            break
+            elif msg_type == 'VFR_HUD':
+                telemetry_data["groundspeed"] = msg.groundspeed
+        
+        telemetry_data["state"] = STATE_NAMES.get(state, "UNKNOWN")
         
         error_alt = TARGET_ALTITUDE - current_alt
         target_vz = np.clip(-1.0 * error_alt * KP_Z, -MAX_SPEED, MAX_SPEED)
@@ -295,20 +330,90 @@ def index():
       <head>
         <title>Misi 2: Pengiriman Medis Otonom</title>
         <style>
-            body { background-color: #1a1a1a; color: white; font-family: Arial, sans-serif; text-align: center; }
-            img { max-width: 100%; height: auto; border: 3px solid #333; border-radius: 10px; }
-            .container { margin-top: 50px; }
+            body { background-color: #121212; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; margin: 0; padding: 20px; }
+            h1 { color: #00d2ff; font-weight: 300; margin-bottom: 30px; }
+            .main-container { display: flex; flex-direction: column; align-items: center; justify-content: center; max-width: 1200px; margin: auto; }
+            .video-container { position: relative; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); border-radius: 12px; overflow: hidden; border: 1px solid #333; max-width: 800px; width: 100%; background: #000; }
+            img { max-width: 100%; height: auto; display: block; }
+            
+            .telemetry-dashboard { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; width: 100%; max-width: 900px; }
+            .telemetry-card { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; flex: 1; min-width: 180px; box-shadow: 0 4px 15px rgba(0,0,0,0.4); transition: transform 0.2s ease; }
+            .telemetry-card:hover { transform: translateY(-3px); border-color: #444; }
+            .telemetry-card h3 { margin: 0 0 12px 0; font-size: 13px; color: #aaa; text-transform: uppercase; letter-spacing: 1px; }
+            .telemetry-card .value { font-size: 26px; font-weight: 600; color: #fff; }
+            .highlight { color: #00d2ff !important; text-shadow: 0 0 10px rgba(0, 210, 255, 0.3); }
+            .warning { color: #ff4a4a !important; text-shadow: 0 0 10px rgba(255, 74, 74, 0.3); }
+            .success { color: #00ff88 !important; text-shadow: 0 0 10px rgba(0, 255, 136, 0.3); }
         </style>
+        <script>
+            function fetchTelemetry() {
+                fetch('/telemetry')
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('alt-val').innerText = data.altitude.toFixed(2) + ' m';
+                        
+                        let batStr = data.battery_voltage > 0 ? data.battery_voltage.toFixed(2) + ' V (' + data.battery_remaining + '%)' : '0.00 V (0%)';
+                        document.getElementById('bat-val').innerText = batStr;
+                        
+                        if (data.battery_remaining < 20 && data.battery_voltage > 0) {
+                            document.getElementById('bat-val').className = 'value warning';
+                        } else {
+                            document.getElementById('bat-val').className = 'value success';
+                        }
+
+                        document.getElementById('mode-val').innerText = data.flight_mode;
+                        document.getElementById('state-val').innerText = data.state;
+                        document.getElementById('speed-val').innerText = data.groundspeed.toFixed(2) + ' m/s';
+                        document.getElementById('ch8-val').innerText = data.ch8;
+                    })
+                    .catch(err => console.error("Error fetching telemetry:", err));
+            }
+            setInterval(fetchTelemetry, 500);
+        </script>
       </head>
       <body>
-        <div class="container">
-            <h1>Video Stream Drone KRTI</h1>
-            <img src="/video_feed" />
+        <div class="main-container">
+            <h1>Sistem Pemantauan Misi VTOL</h1>
+            
+            <div class="video-container">
+                <img src="/video_feed" />
+            </div>
+
+            <div class="telemetry-dashboard">
+                <div class="telemetry-card">
+                    <h3>State Misi</h3>
+                    <div class="value highlight" id="state-val">--</div>
+                </div>
+                <div class="telemetry-card">
+                    <h3>Flight Mode</h3>
+                    <div class="value" id="mode-val">--</div>
+                </div>
+                <div class="telemetry-card">
+                    <h3>Ketinggian</h3>
+                    <div class="value" id="alt-val">-- m</div>
+                </div>
+                <div class="telemetry-card">
+                    <h3>Baterai</h3>
+                    <div class="value" id="bat-val">-- V (--%)</div>
+                </div>
+                <div class="telemetry-card">
+                    <h3>Kecepatan</h3>
+                    <div class="value" id="speed-val">-- m/s</div>
+                </div>
+                <div class="telemetry-card">
+                    <h3>CH 8 (Trigger)</h3>
+                    <div class="value" id="ch8-val">--</div>
+                </div>
+            </div>
         </div>
       </body>
     </html>
     """
     return html_page
+
+@app.route("/telemetry")
+def telemetry():
+    return jsonify(telemetry_data)
 
 @app.route("/video_feed")
 def video_feed():
