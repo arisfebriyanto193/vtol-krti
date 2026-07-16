@@ -73,6 +73,7 @@ def connect_pixhawk(port, baudrate):
     )
     return master
 
+
 def send_velocity(master, vx, vy, vz):
     master.mav.set_position_target_local_ned_send(
         0, master.target_system, master.target_component,
