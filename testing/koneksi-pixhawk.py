@@ -7,7 +7,7 @@ Cara menjalankan:
 python3 koneksi-pixhawk.py --connect /dev/ttyACM0
 """
 from pymavlink import mavutil
-import time
+import time 
 import argparse
 import math
 
@@ -29,12 +29,17 @@ except Exception as e:
     exit(1)
 
 # Request aliran data (Data Streams) agar Pixhawk rutin mengirim semua data ke Raspi
-# Gunakan component 0 (semua) dan kecepatan 5 Hz
 master.mav.request_data_stream_send(
-    master.target_system,
-    0, # Target component 0 untuk mencakup semua
-    mavutil.mavlink.MAV_DATA_STREAM_ALL,
-    5, 1
+    master.target_system, master.target_component,
+    mavutil.mavlink.MAV_DATA_STREAM_ALL, 5, 1
+)
+master.mav.request_data_stream_send(
+    master.target_system, master.target_component,
+    mavutil.mavlink.MAV_DATA_STREAM_EXTRA1, 5, 1 # Untuk ATTITUDE (Roll, Pitch, Yaw)
+)
+master.mav.request_data_stream_send(
+    master.target_system, master.target_component,
+    mavutil.mavlink.MAV_DATA_STREAM_RAW_SENSORS, 5, 1 # Untuk RAW_IMU / SCALED_IMU
 )
 
 def dapatkan_mode_str(custom_mode):
@@ -62,7 +67,7 @@ def baca_data():
     timeout = time.time() + 1.5
     while time.time() < timeout:
         # Menangkap paket spesifik (ditambahkan RC_CHANNELS_RAW untuk Pixhawk lawas/tertentu)
-        msg = master.recv_match(type=['GLOBAL_POSITION_INT', 'VFR_HUD', 'RC_CHANNELS', 'RC_CHANNELS_RAW', 'HEARTBEAT', 'ATTITUDE', 'RAW_IMU'], blocking=True, timeout=0.1)
+        msg = master.recv_match(type=['GLOBAL_POSITION_INT', 'VFR_HUD', 'RC_CHANNELS', 'RC_CHANNELS_RAW', 'HEARTBEAT', 'ATTITUDE', 'RAW_IMU', 'SCALED_IMU2', 'SCALED_IMU'], blocking=True, timeout=0.1)
         if not msg:
             continue
             
@@ -77,7 +82,7 @@ def baca_data():
             data_rc = msg
         elif msg.get_type() == 'ATTITUDE':
             data_attitude = msg
-        elif msg.get_type() == 'RAW_IMU':
+        elif msg.get_type() in ['RAW_IMU', 'SCALED_IMU2', 'SCALED_IMU']:
             data_raw_imu = msg
             
     # Cetak Hasilnya
@@ -89,9 +94,13 @@ def baca_data():
         yaw = math.degrees(data_attitude.yaw)
         yaw = yaw if yaw >= 0 else 360 + yaw
         print(f"📐 Attitude: Roll={roll:.2f}°, Pitch={pitch:.2f}°, Yaw={yaw:.2f}°")
+    else:
+        print("📐 Attitude: Belum ada data (Memeriksa MAV_DATA_STREAM_EXTRA1...)")
         
     if data_raw_imu:
-        print(f"🧲 Magnetometer (Raw): X={data_raw_imu.xmag}, Y={data_raw_imu.ymag}, Z={data_raw_imu.zmag}")
+        print(f"🧲 Magnetometer (Raw/Scaled): X={data_raw_imu.xmag}, Y={data_raw_imu.ymag}, Z={data_raw_imu.zmag}")
+    else:
+        print("🧲 Magnetometer: Belum ada data (Memeriksa RAW_SENSORS...)")
     
     if data_gps:
         lat = data_gps.lat / 1e7
