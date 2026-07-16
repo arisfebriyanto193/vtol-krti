@@ -19,7 +19,7 @@ from config.main import PIXHAWK_PORT, PIXHAWK_BAUD, CAMERA_INDEX
 
 # ================= KONFIGURASI =================
 TARGET_ALTITUDE = 1.5     # Target ketinggian (meter)
-KP_XY = 0.005             # Proportional gain sumbu X dan Y
+KP_XY = 0.008             # Proportional gain sumbu X dan Y (Dinaikkan agar pergerakan centering lebih responsif)
 KP_Z = 0.5                # Proportional gain ketinggian
 MAX_SPEED = 0.5           # Kecepatan maksimal drone (m/s)
 FORWARD_SPEED = 0.5       # Kecepatan maju menuju WP2 (m/s)
@@ -105,7 +105,7 @@ def detect_red_box(frame):
     
     if len(contours) > 0:
         c = max(contours, key=cv2.contourArea)
-        if cv2.contourArea(c) > 1000:
+        if cv2.contourArea(c) > 4000:  # Area dinaikkan dari 1000 ke 4000 untuk meminimalisir deteksi palsu (false-positive)
             M = cv2.moments(c)
             if M["m00"] != 0:
                 cx = int(M["m10"] / M["m00"])
@@ -230,10 +230,10 @@ def drone_mission_task(connect_port, baud, camera_index):
                 
                 send_velocity(master, target_vx, target_vy, target_vz)
                 
-                if abs(error_x) < 40 and abs(error_y) < 40:
+                if abs(error_x) < 80 and abs(error_y) < 80:  # Toleransi radius diperlebar ke 80px (sekitar ~6% layar)
                     if stable_start_time == 0:
                         stable_start_time = time.time()
-                    elif time.time() - stable_start_time > 3.0:
+                    elif time.time() - stable_start_time > 2.0:  # Waktu tahan dipersingkat ke 2 detik agar tidak terlalu lama
                         print("✅ Stabil di WP1. Memulai pergerakan ke WP2!")
                         state = STATE_MOVE_WP2
                 else:
@@ -272,10 +272,10 @@ def drone_mission_task(connect_port, baud, camera_index):
                 
                 send_velocity(master, target_vx, target_vy, target_vz)
                 
-                if abs(error_x) < 40 and abs(error_y) < 40:
+                if abs(error_x) < 80 and abs(error_y) < 80:  # Toleransi radius diperlebar
                     if stable_start_time == 0:
                         stable_start_time = time.time()
-                    elif time.time() - stable_start_time > 3.0:
+                    elif time.time() - stable_start_time > 2.0:  # Waktu tahan dipersingkat
                         print("✅ Target Terkunci! Menjatuhkan Payload...")
                         state = STATE_DROP_PAYLOAD
                         stable_start_time = time.time()
@@ -284,8 +284,10 @@ def drone_mission_task(connect_port, baud, camera_index):
                 
                 cv2.putText(frame, "STATE 2: CENTERING BOX MERAH", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             else:
-                send_velocity(master, 0.0, 0.0, target_vz)
-                cv2.putText(frame, "KEHILANGAN BOX MERAH!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                # Perbaikan Bug: Jika kotak merah hilang (karena deteksi palsu sebelumnya), drone harus KEMBALI MAJU (MOVE WP2)
+                print("⚠️ Kehilangan Box Merah! Kembali ke mode pencarian (maju)...")
+                state = STATE_MOVE_WP2
+                stable_start_time = 0
 
         elif state == STATE_DROP_PAYLOAD:
             drop_payload(master)
