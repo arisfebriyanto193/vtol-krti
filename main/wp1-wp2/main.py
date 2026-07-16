@@ -3,11 +3,17 @@
 Misi 2 KRTI VTOL: Navigasi dari WP1 ke WP2, Deteksi Box Merah, dan Drop Payload (Servo)
 """
 
+import os
+import sys
 import cv2
 import time
 import argparse
 import numpy as np
 from pymavlink import mavutil
+
+# Menambahkan path folder 'main' ke sys.path agar bisa membaca folder 'config'
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config.main import PIXHAWK_PORT, PIXHAWK_BAUD, CAMERA_INDEX
 
 # ================= KONFIGURASI =================
 TARGET_ALTITUDE = 1.5     # Target ketinggian (meter)
@@ -93,9 +99,9 @@ def detect_red_box(frame):
 
 def main():
     parser = argparse.ArgumentParser(description='Misi 2 VTOL: WP1 ke WP2, Deteksi Box Merah, Drop Payload')
-    parser.add_argument('--connect', default='/dev/ttyACM0', help="Port Pixhawk")
-    parser.add_argument('--baud', type=int, default=115200, help="Baudrate Pixhawk")
-    parser.add_argument('--camera', type=int, default=1, help="Index kamera")
+    parser.add_argument('--connect', default=PIXHAWK_PORT, help="Port Pixhawk")
+    parser.add_argument('--baud', type=int, default=PIXHAWK_BAUD, help="Baudrate Pixhawk")
+    parser.add_argument('--camera', type=int, default=CAMERA_INDEX, help="Index kamera")
     args = parser.parse_args()
 
     master = connect_pixhawk(args.connect, args.baud)

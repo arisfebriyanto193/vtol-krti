@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
+import os
+import sys
 import cv2
 import numpy as np
 
+# Menambahkan path folder 'main' ke sys.path agar bisa membaca folder 'config'
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from config.main import CAMERA_INDEX
+
 def main():
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(CAMERA_INDEX)
     # TINGKATKAN RESOLUSI KE 720p AGAR KOTAK 7x7 YANG KECIL BISA TERBACA JELAS
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
