@@ -31,6 +31,7 @@ SERVO_PWM_CLOSE = 1100    # Nilai PWM standar/tertutup
 # ===============================================
 
 # Definisi State Mesin
+STATE_WAIT_START = -1
 STATE_HOVER_WP1 = 0
 STATE_MOVE_WP2 = 1
 STATE_CENTER_BOX = 2
@@ -61,18 +62,10 @@ def send_velocity(master, vx, vy, vz):
     )
 
 def drop_payload(master):
-    print("🚀 MENJATUHKAN PAYLOAD (FIRST AID KIT)!")
-    master.mav.command_long_send(
-        master.target_system, master.target_component,
-        mavutil.mavlink.MAV_CMD_DO_SET_SERVO, 0,
-        SERVO_PIN, SERVO_PWM_OPEN, 0, 0, 0, 0, 0
-    )
+    print("🚀 [SIMULASI] MENJATUHKAN PAYLOAD (FIRST AID KIT)!")
+    print(f"[SIMULASI] Mengirim perintah BUKA ke Servo PIN {SERVO_PIN} dengan PWM {SERVO_PWM_OPEN}")
+    # master.mav.command_long_send(...)
 
-def get_altitude(master, current_alt):
-    msg = master.recv_match(type='GLOBAL_POSITION_INT', blocking=False)
-    if msg:
-        return msg.relative_alt / 1000.0
-    return current_alt
 
 def detect_red_box(frame):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -125,14 +118,16 @@ def drone_mission_task(connect_port, baud, camera_index):
         detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_params)
 
     current_alt = 0.0
-    state = STATE_HOVER_WP1
+    ch8_value = 0
+    state = STATE_WAIT_START
     stable_start_time = 0
 
-    master.mav.command_long_send(
-        master.target_system, master.target_component,
-        mavutil.mavlink.MAV_CMD_DO_SET_SERVO, 0,
-        SERVO_PIN, SERVO_PWM_CLOSE, 0, 0, 0, 0, 0
-    )
+    print(f"\n[INIT] [SIMULASI] Menutup Servo (PWM {SERVO_PWM_CLOSE}) pada PIN {SERVO_PIN}")
+    # master.mav.command_long_send(
+    #     master.target_system, master.target_component,
+    #     mavutil.mavlink.MAV_CMD_DO_SET_SERVO, 0,
+    #     SERVO_PIN, SERVO_PWM_CLOSE, 0, 0, 0, 0, 0
+    # )
 
     print("\n🚀 Sistem Misi 2 Siap!")
     print("Mode: GUIDED")
@@ -147,14 +142,39 @@ def drone_mission_task(connect_port, baud, camera_index):
         center_x_frame = w // 2
         center_y_frame = h // 2
         
-        current_alt = get_altitude(master, current_alt)
+        # Mengambil SEMUA pesan MAVLink yang masuk agar tidak saling overwrite
+        while True:
+            msg = master.recv_match(blocking=False)
+            if not msg:
+                break
+            msg_type = msg.get_type()
+            if msg_type == 'GLOBAL_POSITION_INT':
+                current_alt = msg.relative_alt / 1000.0
+            elif msg_type == 'RC_CHANNELS':
+                ch8_value = msg.chan8_raw
+        
         error_alt = TARGET_ALTITUDE - current_alt
         target_vz = np.clip(-1.0 * error_alt * KP_Z, -MAX_SPEED, MAX_SPEED)
 
         cv2.line(frame, (center_x_frame - 10, center_y_frame), (center_x_frame + 10, center_y_frame), (255, 0, 0), 2)
         cv2.line(frame, (center_x_frame, center_y_frame - 10), (center_x_frame, center_y_frame + 10), (255, 0, 0), 2)
 
-        if state == STATE_HOVER_WP1:
+        if state == STATE_WAIT_START:
+            cv2.putText(frame, f"MENUNGGU START! (CH 8: {ch8_value})", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+            cv2.putText(frame, "Nyalakan CH 8 (> 1900) untuk GUIDED mode", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            
+            if ch8_value > 1900:
+                print("✅ Sinyal CH 8 terdeteksi! Mengubah mode ke GUIDED...")
+                mode_id = master.mode_mapping()['GUIDED']
+                master.mav.command_long_send(
+                    master.target_system, master.target_component,
+                    mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+                    mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                    mode_id, 0, 0, 0, 0, 0
+                )
+                state = STATE_HOVER_WP1
+
+        elif state == STATE_HOVER_WP1:
             if has_new_api:
                 corners, ids, rejected = detector.detectMarkers(frame)
             else:
