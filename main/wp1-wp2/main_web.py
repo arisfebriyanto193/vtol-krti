@@ -141,6 +141,7 @@ def drone_mission_task(connect_port, baud, camera_index):
     ch8_value = 0
     state = STATE_WAIT_START
     stable_start_time = 0
+    last_mode_request = 0
 
     print(f"\n[INIT] [SIMULASI] Menutup Servo (PWM {SERVO_PWM_CLOSE}) pada PIN {SERVO_PIN}")
     # master.mav.command_long_send(
@@ -200,16 +201,43 @@ def drone_mission_task(connect_port, baud, camera_index):
             
             if ch8_value > 1900:
                 print("✅ Sinyal CH 8 terdeteksi! Mengubah mode ke GUIDED...")
-                mode_id = master.mode_mapping()['GUIDED']
-                master.mav.command_long_send(
-                    master.target_system, master.target_component,
-                    mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
-                    mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-                    mode_id, 0, 0, 0, 0, 0
-                )
+                if master.mode_mapping() and 'GUIDED' in master.mode_mapping():
+                    mode_id = master.mode_mapping()['GUIDED']
+                    master.mav.command_long_send(
+                        master.target_system, master.target_component,
+                        mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+                        mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                        mode_id, 0, 0, 0, 0, 0
+                    )
                 state = STATE_HOVER_WP1
+                last_mode_request = time.time()
 
-        elif state == STATE_HOVER_WP1:
+        # ================= FITUR SAFETY & MODE ENFORCER =================
+        if state != STATE_WAIT_START:
+            # 1. Jika Pilot mematikan switch CH 8, batalkan misi
+            if ch8_value < 1900:
+                print("🛑 CH 8 DIMATIKAN! Membatalkan misi dan kembali ke mode tunggu...")
+                state = STATE_WAIT_START
+                continue
+            
+            # 2. Jika Flight Controller otomatis keluar dari GUIDED (misal STABILIZE karena jitter remot/failsafe)
+            if telemetry_data["flight_mode"] != "GUIDED" and telemetry_data["flight_mode"] != "UNKNOWN":
+                cv2.putText(frame, f"PERINGATAN: MODE {telemetry_data['flight_mode']} (BUKAN GUIDED)!", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                # Paksa kembali ke GUIDED maksimal 1 kali setiap 2 detik agar tidak spam
+                if time.time() - last_mode_request > 2.0:
+                    print(f"⚠️ Peringatan: Mode berubah ke {telemetry_data['flight_mode']}. Memaksa kembali ke GUIDED...")
+                    if master.mode_mapping() and 'GUIDED' in master.mode_mapping():
+                        mode_id = master.mode_mapping()['GUIDED']
+                        master.mav.command_long_send(
+                            master.target_system, master.target_component,
+                            mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+                            mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                            mode_id, 0, 0, 0, 0, 0
+                        )
+                    last_mode_request = time.time()
+        # ================================================================
+
+        if state == STATE_HOVER_WP1:
             if has_new_api:
                 corners, ids, rejected = detector.detectMarkers(frame)
             else:
