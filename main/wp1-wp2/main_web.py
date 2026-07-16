@@ -212,7 +212,8 @@ def drone_mission_task(connect_port, baud, camera_index):
                     )
                 state = STATE_HOVER_WP1
                 last_mode_request = time.time()
-
+  
+  
         # ================= FITUR SAFETY & MODE ENFORCER =================
         if state != STATE_WAIT_START:
             # 1. Jika Pilot mematikan switch CH 8, batalkan misi
