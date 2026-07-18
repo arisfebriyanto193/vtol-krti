@@ -88,8 +88,9 @@ def main():
     # Mulai Web Server di port 5000
     start_web_server(port=5000)
 
-    while True:
-        ret, frame = cap.read()
+    try:
+        while True:
+            ret, frame = cap.read()
         if not ret:
             break
 
@@ -173,14 +174,10 @@ def main():
             mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0
         )
 
-        cv2.imshow("Test Centering 7x7", frame)
-
-        # Keluar jika menekan tombol 'q'
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
+    except KeyboardInterrupt:
+        print("\n🛑 Program dihentikan oleh user (Ctrl+C).")
+    finally:
+        cap.release()
 
 if __name__ == '__main__':
     main()
