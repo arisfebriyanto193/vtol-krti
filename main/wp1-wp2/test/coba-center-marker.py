@@ -24,7 +24,9 @@ except ImportError:
 
 # ================= KONFIGURASI =================
 KP_XY = 0.005             # Proportional gain sumbu X dan Y
+KP_Z = 0.5                # Proportional gain sumbu Z (Altitude)
 MAX_SPEED = 0.5           # Kecepatan maksimal drone (m/s)
+TARGET_ALTITUDE = 2.0     # Target ketinggian (meter)
 # ===============================================
 
 def connect_pixhawk(port, baudrate):
@@ -88,8 +90,22 @@ def main():
     # Mulai Web Server di port 5000
     start_web_server(port=5000)
 
+    current_alt = 0.0
+
     try:
         while True:
+            # Baca data ketinggian terbaru dari Pixhawk
+            while True:
+                msg = master.recv_match(type='GLOBAL_POSITION_INT', blocking=False)
+                if not msg:
+                    break
+                current_alt = msg.relative_alt / 1000.0  # Konversi mm ke meter
+
+            # Hitung vz untuk menjaga ketinggian 2 meter
+            # vz negatif = naik, vz positif = turun
+            error_alt = TARGET_ALTITUDE - current_alt
+            target_vz = np.clip(-1.0 * error_alt * KP_Z, -MAX_SPEED, MAX_SPEED)
+
             ret, frame = cap.read()
             if not ret:
                 break
@@ -129,10 +145,10 @@ def main():
                 target_vx = np.clip(-1.0 * error_y * KP_XY, -MAX_SPEED, MAX_SPEED)
                 target_vy = np.clip(1.0 * error_x * KP_XY, -MAX_SPEED, MAX_SPEED)
                 
-                # Kirim data pergerakan (VZ = 0 agar altitude tidak berubah)
-                send_velocity(master, target_vx, target_vy, 0.0)
+                # Kirim data pergerakan (Termasuk koreksi altitude di VZ)
+                send_velocity(master, target_vx, target_vy, target_vz)
     
-                status_text = f"CENTERING | vx: {target_vx:.2f} vy: {target_vy:.2f}"
+                status_text = f"CENTERING | vx: {target_vx:.2f} vy: {target_vy:.2f} vz: {target_vz:.2f}"
                 cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 
                 # Indikator jika sudah center (toleransi 40 pixel)
@@ -145,24 +161,28 @@ def main():
                 # Siapkan data telemetri untuk web
                 telem_data = {
                     "Status": "MENGARAH KE TARGET" if not is_centered else "TARGET TERKUNCI",
+                    "Altitude (m)": f"{current_alt:.2f}",
                     "Error X (px)": f"{error_x}",
                     "Error Y (px)": f"{error_y}",
                     "Velocity X": f"{target_vx:.2f} m/s",
-                    "Velocity Y": f"{target_vy:.2f} m/s"
+                    "Velocity Y": f"{target_vy:.2f} m/s",
+                    "Velocity Z": f"{target_vz:.2f} m/s"
                 }
     
             else:
-                # Marker tidak terdeteksi, berhenti di tempat (hover)
-                send_velocity(master, 0.0, 0.0, 0.0)
+                # Marker tidak terdeteksi, hanya koreksi altitude (hover)
+                send_velocity(master, 0.0, 0.0, target_vz)
                 cv2.putText(frame, "MENCARI MARKER 7x7", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                 
                 # Siapkan data telemetri pencarian
                 telem_data = {
                     "Status": "MENCARI MARKER 7x7",
+                    "Altitude (m)": f"{current_alt:.2f}",
                     "Error X (px)": "N/A",
                     "Error Y (px)": "N/A",
                     "Velocity X": "0.00 m/s",
-                    "Velocity Y": "0.00 m/s"
+                    "Velocity Y": "0.00 m/s",
+                    "Velocity Z": f"{target_vz:.2f} m/s"
                 }
     
             # Update data ke web dashboard
