@@ -27,7 +27,7 @@ KP_XY = 0.0015            # Diperkecil agar gerakan tidak terlalu agresif (osila
 KP_Z = 0.5                # Proportional gain sumbu Z (Altitude)
 MAX_SPEED = 0.3           # Kecepatan maksimal diturunkan agar lebih stabil
 TARGET_ALTITUDE = 2.0     # Target ketinggian (meter)
-ENABLE_WEB_DASHBOARD = True # Ubah ke False untuk mematikan web server
+ENABLE_LIVE_VIDEO = False # Jika False, web hanya menampilkan animasi (titik) tanpa video asli
 # ===============================================
 
 def connect_pixhawk(port, baudrate):
@@ -88,9 +88,8 @@ def main():
     print("\n🚀 Memulai Program Centering Marker 7x7!")
     print("⚠️ PASTIKAN DRONE DALAM MODE GUIDED AGAR COMMAND PERGERAKAN BERJALAN ⚠️")
 
-    # Mulai Web Server jika diaktifkan di konfigurasi
-    if ENABLE_WEB_DASHBOARD:
-        start_web_server(port=5000)
+    # Selalu jalankan Web Server
+    start_web_server(port=5000)
 
     current_alt = None
 
@@ -125,12 +124,18 @@ def main():
             h, w, _ = frame.shape
             center_x_frame = w // 2
             center_y_frame = h // 2
+            
+            # Tentukan canvas yang akan dikirim ke web dashboard
+            if ENABLE_LIVE_VIDEO:
+                display_frame = frame
+            else:
+                display_frame = np.zeros((h, w, 3), dtype=np.uint8)
     
             # Gambar crosshair (titik tengah frame)
-            cv2.line(frame, (center_x_frame - 15, center_y_frame), (center_x_frame + 15, center_y_frame), (255, 0, 0), 2)
-            cv2.line(frame, (center_x_frame, center_y_frame - 15), (center_x_frame, center_y_frame + 15), (255, 0, 0), 2)
+            cv2.line(display_frame, (center_x_frame - 15, center_y_frame), (center_x_frame + 15, center_y_frame), (255, 0, 0), 2)
+            cv2.line(display_frame, (center_x_frame, center_y_frame - 15), (center_x_frame, center_y_frame + 15), (255, 0, 0), 2)
     
-            # Deteksi Marker ArUco 7x7
+            # Deteksi Marker ArUco 7x7 pada frame ASLI
             if has_new_api:
                 corners, ids, rejected = detector.detectMarkers(frame)
             else:
@@ -142,9 +147,9 @@ def main():
                 cx = int(np.mean(points[:, 0]))
                 cy = int(np.mean(points[:, 1]))
                 
-                # Gambar visualisasi marker
-                cv2.aruco.drawDetectedMarkers(frame, corners, ids)
-                cv2.line(frame, (center_x_frame, center_y_frame), (cx, cy), (0, 255, 255), 2)
+                # Gambar visualisasi marker pada display_frame
+                cv2.aruco.drawDetectedMarkers(display_frame, corners, ids)
+                cv2.line(display_frame, (center_x_frame, center_y_frame), (cx, cy), (0, 255, 255), 2)
     
                 # Hitung error titik tengah
                 error_x = cx - center_x_frame
@@ -161,11 +166,11 @@ def main():
                 send_velocity(master, target_vx, target_vy, target_vz)
     
                 status_text = f"CENTERING | vx: {target_vx:.2f} vy: {target_vy:.2f} vz: {target_vz:.2f}"
-                cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(display_frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 
                 # Indikator jika sudah center (toleransi 40 pixel)
                 if abs(error_x) < 40 and abs(error_y) < 40:
-                    cv2.putText(frame, "TARGET TERKUNCI", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                    cv2.putText(display_frame, "TARGET TERKUNCI", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
                     is_centered = True
                 else:
                     is_centered = False
@@ -184,7 +189,7 @@ def main():
             else:
                 # Marker tidak terdeteksi, berhenti sepenuhnya (hover)
                 send_velocity(master, 0.0, 0.0, 0.0)
-                cv2.putText(frame, "MENCARI MARKER 7x7", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                cv2.putText(display_frame, "MENCARI MARKER 7x7", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                 
                 # Siapkan data telemetri pencarian
                 telem_data = {
@@ -197,9 +202,8 @@ def main():
                     "Velocity Z": "0.00 m/s"
                 }
     
-            # Update data ke web dashboard jika diaktifkan
-            if ENABLE_WEB_DASHBOARD:
-                update_web_data(frame, telem_data)
+            # Selalu update data ke web dashboard
+            update_web_data(display_frame, telem_data)
     
             # Kirim Heartbeat secara kontinu agar koneksi GCS tidak time-out
             master.mav.heartbeat_send(
