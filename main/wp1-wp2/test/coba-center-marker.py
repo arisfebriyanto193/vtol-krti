@@ -91,87 +91,87 @@ def main():
     try:
         while True:
             ret, frame = cap.read()
-        if not ret:
-            break
-
-        h, w, _ = frame.shape
-        center_x_frame = w // 2
-        center_y_frame = h // 2
-
-        # Gambar crosshair (titik tengah frame)
-        cv2.line(frame, (center_x_frame - 15, center_y_frame), (center_x_frame + 15, center_y_frame), (255, 0, 0), 2)
-        cv2.line(frame, (center_x_frame, center_y_frame - 15), (center_x_frame, center_y_frame + 15), (255, 0, 0), 2)
-
-        # Deteksi Marker ArUco 7x7
-        if has_new_api:
-            corners, ids, rejected = detector.detectMarkers(frame)
-        else:
-            corners, ids, rejected = cv2.aruco.detectMarkers(frame, aruco_dict, parameters=aruco_params)
-
-        if ids is not None and len(ids) > 0:
-            # Ambil marker pertama yang dideteksi
-            points = corners[0][0]
-            cx = int(np.mean(points[:, 0]))
-            cy = int(np.mean(points[:, 1]))
-            
-            # Gambar visualisasi marker
-            cv2.aruco.drawDetectedMarkers(frame, corners, ids)
-            cv2.line(frame, (center_x_frame, center_y_frame), (cx, cy), (0, 255, 255), 2)
-
-            # Hitung error titik tengah
-            error_x = cx - center_x_frame
-            error_y = cy - center_y_frame
-
-            # P-Controller: konversi error (pixel) menjadi velocity (m/s)
-            # Pada frame BODY_NED: Sumbu X adalah Maju/Mundur, Sumbu Y adalah Kanan/Kiri
-            # Pada kamera (menghadap ke bawah): error_y negatif berarti marker di atas (harus maju -> X positif)
-            # error_x positif berarti marker di kanan (harus ke kanan -> Y positif)
-            target_vx = np.clip(-1.0 * error_y * KP_XY, -MAX_SPEED, MAX_SPEED)
-            target_vy = np.clip(1.0 * error_x * KP_XY, -MAX_SPEED, MAX_SPEED)
-            
-            # Kirim data pergerakan (VZ = 0 agar altitude tidak berubah)
-            send_velocity(master, target_vx, target_vy, 0.0)
-
-            status_text = f"CENTERING | vx: {target_vx:.2f} vy: {target_vy:.2f}"
-            cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            
-            # Indikator jika sudah center (toleransi 40 pixel)
-            if abs(error_x) < 40 and abs(error_y) < 40:
-                cv2.putText(frame, "TARGET TERKUNCI", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-                is_centered = True
+            if not ret:
+                break
+    
+            h, w, _ = frame.shape
+            center_x_frame = w // 2
+            center_y_frame = h // 2
+    
+            # Gambar crosshair (titik tengah frame)
+            cv2.line(frame, (center_x_frame - 15, center_y_frame), (center_x_frame + 15, center_y_frame), (255, 0, 0), 2)
+            cv2.line(frame, (center_x_frame, center_y_frame - 15), (center_x_frame, center_y_frame + 15), (255, 0, 0), 2)
+    
+            # Deteksi Marker ArUco 7x7
+            if has_new_api:
+                corners, ids, rejected = detector.detectMarkers(frame)
             else:
-                is_centered = False
-
-            # Siapkan data telemetri untuk web
-            telem_data = {
-                "Status": "MENGARAH KE TARGET" if not is_centered else "TARGET TERKUNCI",
-                "Error X (px)": f"{error_x}",
-                "Error Y (px)": f"{error_y}",
-                "Velocity X": f"{target_vx:.2f} m/s",
-                "Velocity Y": f"{target_vy:.2f} m/s"
-            }
-
-        else:
-            # Marker tidak terdeteksi, berhenti di tempat (hover)
-            send_velocity(master, 0.0, 0.0, 0.0)
-            cv2.putText(frame, "MENCARI MARKER 7x7", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-            
-            # Siapkan data telemetri pencarian
-            telem_data = {
-                "Status": "MENCARI MARKER 7x7",
-                "Error X (px)": "N/A",
-                "Error Y (px)": "N/A",
-                "Velocity X": "0.00 m/s",
-                "Velocity Y": "0.00 m/s"
-            }
-
-        # Update data ke web dashboard
-        update_web_data(frame, telem_data)
-
-        # Kirim Heartbeat secara kontinu agar koneksi GCS tidak time-out
-        master.mav.heartbeat_send(
-            mavutil.mavlink.MAV_TYPE_GCS,
-            mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0
+                corners, ids, rejected = cv2.aruco.detectMarkers(frame, aruco_dict, parameters=aruco_params)
+    
+            if ids is not None and len(ids) > 0:
+                # Ambil marker pertama yang dideteksi
+                points = corners[0][0]
+                cx = int(np.mean(points[:, 0]))
+                cy = int(np.mean(points[:, 1]))
+                
+                # Gambar visualisasi marker
+                cv2.aruco.drawDetectedMarkers(frame, corners, ids)
+                cv2.line(frame, (center_x_frame, center_y_frame), (cx, cy), (0, 255, 255), 2)
+    
+                # Hitung error titik tengah
+                error_x = cx - center_x_frame
+                error_y = cy - center_y_frame
+    
+                # P-Controller: konversi error (pixel) menjadi velocity (m/s)
+                # Pada frame BODY_NED: Sumbu X adalah Maju/Mundur, Sumbu Y adalah Kanan/Kiri
+                # Pada kamera (menghadap ke bawah): error_y negatif berarti marker di atas (harus maju -> X positif)
+                # error_x positif berarti marker di kanan (harus ke kanan -> Y positif)
+                target_vx = np.clip(-1.0 * error_y * KP_XY, -MAX_SPEED, MAX_SPEED)
+                target_vy = np.clip(1.0 * error_x * KP_XY, -MAX_SPEED, MAX_SPEED)
+                
+                # Kirim data pergerakan (VZ = 0 agar altitude tidak berubah)
+                send_velocity(master, target_vx, target_vy, 0.0)
+    
+                status_text = f"CENTERING | vx: {target_vx:.2f} vy: {target_vy:.2f}"
+                cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
+                # Indikator jika sudah center (toleransi 40 pixel)
+                if abs(error_x) < 40 and abs(error_y) < 40:
+                    cv2.putText(frame, "TARGET TERKUNCI", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                    is_centered = True
+                else:
+                    is_centered = False
+    
+                # Siapkan data telemetri untuk web
+                telem_data = {
+                    "Status": "MENGARAH KE TARGET" if not is_centered else "TARGET TERKUNCI",
+                    "Error X (px)": f"{error_x}",
+                    "Error Y (px)": f"{error_y}",
+                    "Velocity X": f"{target_vx:.2f} m/s",
+                    "Velocity Y": f"{target_vy:.2f} m/s"
+                }
+    
+            else:
+                # Marker tidak terdeteksi, berhenti di tempat (hover)
+                send_velocity(master, 0.0, 0.0, 0.0)
+                cv2.putText(frame, "MENCARI MARKER 7x7", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                
+                # Siapkan data telemetri pencarian
+                telem_data = {
+                    "Status": "MENCARI MARKER 7x7",
+                    "Error X (px)": "N/A",
+                    "Error Y (px)": "N/A",
+                    "Velocity X": "0.00 m/s",
+                    "Velocity Y": "0.00 m/s"
+                }
+    
+            # Update data ke web dashboard
+            update_web_data(frame, telem_data)
+    
+            # Kirim Heartbeat secara kontinu agar koneksi GCS tidak time-out
+            master.mav.heartbeat_send(
+                mavutil.mavlink.MAV_TYPE_GCS,
+                mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0
         )
 
     except KeyboardInterrupt:
