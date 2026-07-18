@@ -27,6 +27,7 @@ KP_XY = 0.0015            # Diperkecil agar gerakan tidak terlalu agresif (osila
 KP_Z = 0.5                # Proportional gain sumbu Z (Altitude)
 MAX_SPEED = 0.3           # Kecepatan maksimal diturunkan agar lebih stabil
 TARGET_ALTITUDE = 2.0     # Target ketinggian (meter)
+ENABLE_WEB_DASHBOARD = True # Ubah ke False untuk mematikan web server
 # ===============================================
 
 def connect_pixhawk(port, baudrate):
@@ -87,8 +88,9 @@ def main():
     print("\n🚀 Memulai Program Centering Marker 7x7!")
     print("⚠️ PASTIKAN DRONE DALAM MODE GUIDED AGAR COMMAND PERGERAKAN BERJALAN ⚠️")
 
-    # Mulai Web Server di port 5000
-    start_web_server(port=5000)
+    # Mulai Web Server jika diaktifkan di konfigurasi
+    if ENABLE_WEB_DASHBOARD:
+        start_web_server(port=5000)
 
     current_alt = None
 
@@ -195,8 +197,9 @@ def main():
                     "Velocity Z": "0.00 m/s"
                 }
     
-            # Update data ke web dashboard
-            update_web_data(frame, telem_data)
+            # Update data ke web dashboard jika diaktifkan
+            if ENABLE_WEB_DASHBOARD:
+                update_web_data(frame, telem_data)
     
             # Kirim Heartbeat secara kontinu agar koneksi GCS tidak time-out
             master.mav.heartbeat_send(
