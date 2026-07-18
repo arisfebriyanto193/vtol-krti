@@ -118,8 +118,12 @@ def main():
                 target_vz = 0.0  # Jangan bergerak vertikal jika tidak ada data ketinggian
 
             ret, frame = cap.read()
-            if not ret:
-                break
+            if not ret or frame is None:
+                print("⚠️ [WARNING] Gagal membaca frame dari kamera! (Mungkin kamera digunakan program lain atau kabel kendor)")
+                # Berhenti (Hover) demi keamanan jika kamera blank
+                send_velocity(master, 0.0, 0.0, target_vz)
+                time.sleep(0.1)
+                continue
     
             h, w, _ = frame.shape
             center_x_frame = w // 2
