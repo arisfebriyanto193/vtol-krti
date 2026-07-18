@@ -12,10 +12,15 @@ from pymavlink import mavutil
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 try:
     from config.main import PIXHAWK_PORT, PIXHAWK_BAUD, CAMERA_INDEX
+    from web_dashboard import start_web_server, update_web_data
 except ImportError:
     PIXHAWK_PORT = '/dev/ttyACM0'
     PIXHAWK_BAUD = 115200
     CAMERA_INDEX = 0
+
+    # Fallback jika web_dashboard gagal diimport untuk alasan apapun
+    def start_web_server(port=5000): pass
+    def update_web_data(frame, telemetry): pass
 
 # ================= KONFIGURASI =================
 KP_XY = 0.005             # Proportional gain sumbu X dan Y
@@ -80,6 +85,9 @@ def main():
     print("\n🚀 Memulai Program Centering Marker 7x7!")
     print("⚠️ PASTIKAN DRONE DALAM MODE GUIDED AGAR COMMAND PERGERAKAN BERJALAN ⚠️")
 
+    # Mulai Web Server di port 5000
+    start_web_server(port=5000)
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -129,11 +137,35 @@ def main():
             # Indikator jika sudah center (toleransi 40 pixel)
             if abs(error_x) < 40 and abs(error_y) < 40:
                 cv2.putText(frame, "TARGET TERKUNCI", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                is_centered = True
+            else:
+                is_centered = False
+
+            # Siapkan data telemetri untuk web
+            telem_data = {
+                "Status": "MENGARAH KE TARGET" if not is_centered else "TARGET TERKUNCI",
+                "Error X (px)": f"{error_x}",
+                "Error Y (px)": f"{error_y}",
+                "Velocity X": f"{target_vx:.2f} m/s",
+                "Velocity Y": f"{target_vy:.2f} m/s"
+            }
 
         else:
             # Marker tidak terdeteksi, berhenti di tempat (hover)
             send_velocity(master, 0.0, 0.0, 0.0)
             cv2.putText(frame, "MENCARI MARKER 7x7", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            
+            # Siapkan data telemetri pencarian
+            telem_data = {
+                "Status": "MENCARI MARKER 7x7",
+                "Error X (px)": "N/A",
+                "Error Y (px)": "N/A",
+                "Velocity X": "0.00 m/s",
+                "Velocity Y": "0.00 m/s"
+            }
+
+        # Update data ke web dashboard
+        update_web_data(frame, telem_data)
 
         # Kirim Heartbeat secara kontinu agar koneksi GCS tidak time-out
         master.mav.heartbeat_send(
