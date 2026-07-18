@@ -1,1 +1,154 @@
 
+#!/usr/bin/env python3
+import os
+import sys
+import cv2
+import time
+import argparse
+import numpy as np
+from pymavlink import mavutil
+
+# Menambahkan path folder 'main' ke sys.path agar bisa membaca folder 'config'
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+try:
+    from config.main import PIXHAWK_PORT, PIXHAWK_BAUD, CAMERA_INDEX
+except ImportError:
+    PIXHAWK_PORT = '/dev/ttyACM0'
+    PIXHAWK_BAUD = 115200
+    CAMERA_INDEX = 0
+
+# ================= KONFIGURASI =================
+KP_XY = 0.005             # Proportional gain sumbu X dan Y
+MAX_SPEED = 0.5           # Kecepatan maksimal drone (m/s)
+# ===============================================
+
+def connect_pixhawk(port, baudrate):
+    print(f"Mencoba terhubung ke Pixhawk di {port} (Baudrate: {baudrate})...")
+    master = mavutil.mavlink_connection(port, baud=baudrate)
+    master.wait_heartbeat()
+    print("✅ Berhasil Terhubung ke Pixhawk!")
+    master.mav.request_data_stream_send(
+        master.target_system, master.target_component,
+        mavutil.mavlink.MAV_DATA_STREAM_ALL, 5, 1
+    )
+    return master
+
+def send_velocity(master, vx, vy, vz):
+    """
+    Mengirimkan command pergerakan velocity pada frame BODY_NED.
+    Kondisi drone WAJIB dalam mode GUIDED.
+    """
+    master.mav.set_position_target_local_ned_send(
+        0, master.target_system, master.target_component,
+        mavutil.mavlink.MAV_FRAME_BODY_NED,
+        0b0000111111000111,
+        0, 0, 0, vx, vy, vz, 0, 0, 0, 0, 0
+    )
+
+def main():
+    parser = argparse.ArgumentParser(description='Test Centering Marker 7x7')
+    parser.add_argument('--connect', default=PIXHAWK_PORT, help="Port Pixhawk")
+    parser.add_argument('--baud', type=int, default=PIXHAWK_BAUD, help="Baudrate Pixhawk")
+    parser.add_argument('--camera', type=int, default=CAMERA_INDEX, help="Index kamera")
+    args = parser.parse_args()
+
+    # Koneksi ke Pixhawk
+    master = connect_pixhawk(args.connect, args.baud)
+
+    # Inisialisasi Kamera
+    cap = cv2.VideoCapture(args.camera)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+    if not cap.isOpened():
+        print("❌ Gagal membuka kamera.")
+        return
+
+    # Inisialisasi ArUco Dictionary untuk 7x7
+    # Note: Bisa menggunakan DICT_7X7_50, DICT_7X7_100, dst. sesuai yang dicetak
+    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_7X7_1000)
+    aruco_params = cv2.aruco.DetectorParameters()
+    try:
+        aruco_params.minMarkerPerimeterRate = 0.03
+    except:
+        pass
+
+    has_new_api = hasattr(cv2.aruco, 'ArucoDetector')
+    if has_new_api:
+        detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_params)
+
+    print("\n🚀 Memulai Program Centering Marker 7x7!")
+    print("⚠️ PASTIKAN DRONE DALAM MODE GUIDED AGAR COMMAND PERGERAKAN BERJALAN ⚠️")
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        h, w, _ = frame.shape
+        center_x_frame = w // 2
+        center_y_frame = h // 2
+
+        # Gambar crosshair (titik tengah frame)
+        cv2.line(frame, (center_x_frame - 15, center_y_frame), (center_x_frame + 15, center_y_frame), (255, 0, 0), 2)
+        cv2.line(frame, (center_x_frame, center_y_frame - 15), (center_x_frame, center_y_frame + 15), (255, 0, 0), 2)
+
+        # Deteksi Marker ArUco 7x7
+        if has_new_api:
+            corners, ids, rejected = detector.detectMarkers(frame)
+        else:
+            corners, ids, rejected = cv2.aruco.detectMarkers(frame, aruco_dict, parameters=aruco_params)
+
+        if ids is not None and len(ids) > 0:
+            # Ambil marker pertama yang dideteksi
+            points = corners[0][0]
+            cx = int(np.mean(points[:, 0]))
+            cy = int(np.mean(points[:, 1]))
+            
+            # Gambar visualisasi marker
+            cv2.aruco.drawDetectedMarkers(frame, corners, ids)
+            cv2.line(frame, (center_x_frame, center_y_frame), (cx, cy), (0, 255, 255), 2)
+
+            # Hitung error titik tengah
+            error_x = cx - center_x_frame
+            error_y = cy - center_y_frame
+
+            # P-Controller: konversi error (pixel) menjadi velocity (m/s)
+            # Pada frame BODY_NED: Sumbu X adalah Maju/Mundur, Sumbu Y adalah Kanan/Kiri
+            # Pada kamera (menghadap ke bawah): error_y negatif berarti marker di atas (harus maju -> X positif)
+            # error_x positif berarti marker di kanan (harus ke kanan -> Y positif)
+            target_vx = np.clip(-1.0 * error_y * KP_XY, -MAX_SPEED, MAX_SPEED)
+            target_vy = np.clip(1.0 * error_x * KP_XY, -MAX_SPEED, MAX_SPEED)
+            
+            # Kirim data pergerakan (VZ = 0 agar altitude tidak berubah)
+            send_velocity(master, target_vx, target_vy, 0.0)
+
+            status_text = f"CENTERING | vx: {target_vx:.2f} vy: {target_vy:.2f}"
+            cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            
+            # Indikator jika sudah center (toleransi 40 pixel)
+            if abs(error_x) < 40 and abs(error_y) < 40:
+                cv2.putText(frame, "TARGET TERKUNCI", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+
+        else:
+            # Marker tidak terdeteksi, berhenti di tempat (hover)
+            send_velocity(master, 0.0, 0.0, 0.0)
+            cv2.putText(frame, "MENCARI MARKER 7x7", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+        # Kirim Heartbeat secara kontinu agar koneksi GCS tidak time-out
+        master.mav.heartbeat_send(
+            mavutil.mavlink.MAV_TYPE_GCS,
+            mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0
+        )
+
+        cv2.imshow("Test Centering 7x7", frame)
+
+        # Keluar jika menekan tombol 'q'
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+if __name__ == '__main__':
+    main()
