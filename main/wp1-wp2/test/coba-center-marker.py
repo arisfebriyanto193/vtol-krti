@@ -180,8 +180,8 @@ def main():
                 }
     
             else:
-                # Marker tidak terdeteksi, hanya koreksi altitude (hover)
-                send_velocity(master, 0.0, 0.0, target_vz)
+                # Marker tidak terdeteksi, berhenti sepenuhnya (hover)
+                send_velocity(master, 0.0, 0.0, 0.0)
                 cv2.putText(frame, "MENCARI MARKER 7x7", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                 
                 # Siapkan data telemetri pencarian
@@ -192,7 +192,7 @@ def main():
                     "Error Y (px)": "N/A",
                     "Velocity X": "0.00 m/s",
                     "Velocity Y": "0.00 m/s",
-                    "Velocity Z": f"{target_vz:.2f} m/s"
+                    "Velocity Z": "0.00 m/s"
                 }
     
             # Update data ke web dashboard
