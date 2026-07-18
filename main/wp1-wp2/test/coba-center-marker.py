@@ -23,9 +23,9 @@ except ImportError:
     def update_web_data(frame, telemetry): pass
 
 # ================= KONFIGURASI =================
-KP_XY = 0.005             # Proportional gain sumbu X dan Y
+KP_XY = 0.0015            # Diperkecil agar gerakan tidak terlalu agresif (osilasi)
 KP_Z = 0.5                # Proportional gain sumbu Z (Altitude)
-MAX_SPEED = 0.5           # Kecepatan maksimal drone (m/s)
+MAX_SPEED = 0.3           # Kecepatan maksimal diturunkan agar lebih stabil
 TARGET_ALTITUDE = 2.0     # Target ketinggian (meter)
 # ===============================================
 
