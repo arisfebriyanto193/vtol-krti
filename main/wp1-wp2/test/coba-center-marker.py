@@ -90,21 +90,31 @@ def main():
     # Mulai Web Server di port 5000
     start_web_server(port=5000)
 
-    current_alt = 0.0
+    current_alt = None
 
     try:
         while True:
             # Baca data ketinggian terbaru dari Pixhawk
             while True:
-                msg = master.recv_match(type='GLOBAL_POSITION_INT', blocking=False)
+                msg = master.recv_match(type=['GLOBAL_POSITION_INT', 'LOCAL_POSITION_NED', 'RANGEFINDER'], blocking=False)
                 if not msg:
                     break
-                current_alt = msg.relative_alt / 1000.0  # Konversi mm ke meter
+                
+                msg_type = msg.get_type()
+                if msg_type == 'GLOBAL_POSITION_INT':
+                    current_alt = msg.relative_alt / 1000.0  # Konversi mm ke meter
+                elif msg_type == 'LOCAL_POSITION_NED':
+                    current_alt = -msg.z  # NED frame: Z negatif artinya naik
+                elif msg_type == 'RANGEFINDER':
+                    current_alt = msg.distance  # Jarak dari lidar/sonar ke tanah
 
             # Hitung vz untuk menjaga ketinggian 2 meter
             # vz negatif = naik, vz positif = turun
-            error_alt = TARGET_ALTITUDE - current_alt
-            target_vz = np.clip(-1.0 * error_alt * KP_Z, -MAX_SPEED, MAX_SPEED)
+            if current_alt is not None:
+                error_alt = TARGET_ALTITUDE - current_alt
+                target_vz = np.clip(-1.0 * error_alt * KP_Z, -MAX_SPEED, MAX_SPEED)
+            else:
+                target_vz = 0.0  # Jangan bergerak vertikal jika tidak ada data ketinggian
 
             ret, frame = cap.read()
             if not ret:
@@ -161,7 +171,7 @@ def main():
                 # Siapkan data telemetri untuk web
                 telem_data = {
                     "Status": "MENGARAH KE TARGET" if not is_centered else "TARGET TERKUNCI",
-                    "Altitude (m)": f"{current_alt:.2f}",
+                    "Altitude (m)": f"{current_alt:.2f}" if current_alt is not None else "Unknown",
                     "Error X (px)": f"{error_x}",
                     "Error Y (px)": f"{error_y}",
                     "Velocity X": f"{target_vx:.2f} m/s",
@@ -177,7 +187,7 @@ def main():
                 # Siapkan data telemetri pencarian
                 telem_data = {
                     "Status": "MENCARI MARKER 7x7",
-                    "Altitude (m)": f"{current_alt:.2f}",
+                    "Altitude (m)": f"{current_alt:.2f}" if current_alt is not None else "Unknown",
                     "Error X (px)": "N/A",
                     "Error Y (px)": "N/A",
                     "Velocity X": "0.00 m/s",
