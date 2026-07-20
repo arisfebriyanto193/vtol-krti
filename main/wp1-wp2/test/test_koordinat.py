@@ -15,6 +15,12 @@ def main():
     # Inisialisasi ArUco Dictionary (Mendukung 7x7 seperti script Anda lainnya)
     aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_7X7_1000)
     aruco_params = cv2.aruco.DetectorParameters()
+    try:
+        # Menurunkan batas minimal ukuran marker agar lebih sensitif 
+        # (seperti di coba-center-marker.py)
+        aruco_params.minMarkerPerimeterRate = 0.03
+    except:
+        pass
 
     # Mendukung OpenCV versi terbaru dan lama
     has_new_api = hasattr(cv2.aruco, 'ArucoDetector')
@@ -23,6 +29,7 @@ def main():
 
     print("🚀 Memulai Program Test Koordinat ArUco...")
     print("Tekan 'Ctrl+C' di terminal untuk keluar.")
+    print("🔄 Menunggu deteksi marker...")
 
     try:
         while True:
@@ -60,13 +67,14 @@ def main():
                 else:
                     status = "🔄 MENGARAH (TRACKING)"
                 
-                # Tampilkan di terminal dengan menimpa baris sebelumnya (\r) agar tidak spam
-                msg = f"[{status}] Marker ID: {marker_id} | Koordinat (X: {cx:4d}, Y: {cy:4d}) | Jarak (Err X: {error_x:4d}, Err Y: {error_y:4d})"
-                print(f"{msg:<100}", end='\r', flush=True)
+                # Tampilkan di terminal (tanpa \r agar pasti muncul di semua jenis terminal)
+                msg = f"[{status}] Marker ID: {marker_id} | Koordinat (X: {cx}, Y: {cy}) | Jarak (Err X: {error_x}, Err Y: {error_y})"
+                print(msg)
 
             else:
-                msg = "[❌ MARKER HILANG] Mencari marker 7x7..."
-                print(f"{msg:<100}", end='\r', flush=True)
+                # Tidak melakukan print apa-apa jika marker tidak terdeteksi
+                # (agar terminal tidak kebanjiran teks)
+                pass
 
     except KeyboardInterrupt:
         print("\n🛑 Program dihentikan.")
