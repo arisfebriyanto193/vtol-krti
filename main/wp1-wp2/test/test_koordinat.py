@@ -42,21 +42,31 @@ def main():
                 corners, ids, rejected = cv2.aruco.detectMarkers(frame, aruco_dict, parameters=aruco_params)
 
             if ids is not None and len(ids) > 0:
-                # Loop melalui semua marker yang terdeteksi
-                for i in range(len(ids)):
-                    marker_id = ids[i][0]
-                    points = corners[i][0]
-                    
-                    # Hitung titik tengah marker (Pusat Koordinat / Center of Mass)
-                    cx = int(np.mean(points[:, 0]))
-                    cy = int(np.mean(points[:, 1]))
-                    
-                    # Hitung jarak/error posisi terhadap titik tengah frame
-                    error_x = cx - center_x_frame
-                    error_y = cy - center_y_frame
-                    
-                    # Tampilkan di terminal: Koordinat Asli & Selisih dari tengah
-                    print(f"Marker ID: {marker_id} | Koordinat (X: {cx}, Y: {cy}) | Jarak ke Tengah (Err X: {error_x}, Err Y: {error_y})")
+                # Ambil marker pertama yang dideteksi
+                marker_id = ids[0][0]
+                points = corners[0][0]
+                
+                # Hitung titik tengah marker (Pusat Koordinat / Center of Mass)
+                cx = int(np.mean(points[:, 0]))
+                cy = int(np.mean(points[:, 1]))
+                
+                # Hitung jarak/error posisi terhadap titik tengah frame
+                error_x = cx - center_x_frame
+                error_y = cy - center_y_frame
+                
+                # Logika Mengunci Koordinat (Toleransi 40 pixel dari titik tengah layar)
+                if abs(error_x) < 40 and abs(error_y) < 40:
+                    status = "✅ TERKUNCI (LOCKED)  "
+                else:
+                    status = "🔄 MENGARAH (TRACKING)"
+                
+                # Tampilkan di terminal dengan menimpa baris sebelumnya (\r) agar tidak spam
+                msg = f"[{status}] Marker ID: {marker_id} | Koordinat (X: {cx:4d}, Y: {cy:4d}) | Jarak (Err X: {error_x:4d}, Err Y: {error_y:4d})"
+                print(f"{msg:<100}", end='\r', flush=True)
+
+            else:
+                msg = "[❌ MARKER HILANG] Mencari marker 7x7..."
+                print(f"{msg:<100}", end='\r', flush=True)
 
     except KeyboardInterrupt:
         print("\n🛑 Program dihentikan.")
