@@ -303,7 +303,8 @@ def index():
     team = config_data.get('team', 'Biru')
     # Background dinamis sesuai tim
     bg_image = '/komponen/tim-biru/image.png' if team == 'Biru' else '/komponen/tim-merah/image.png'
-    wp_data = config_data.get('waypoints', {})
+    wp_key = f'waypoints_{team}'
+    wp_data = config_data.get(wp_key, {})
     return render_template_string(HTML_TEMPLATE, team=team, bg_image=bg_image, wp_data=wp_data)
 
 @app.route('/set_team', methods=['POST'])
@@ -363,10 +364,13 @@ def calibrate(wp):
     
     alt_esp = esp_reader.get_bottom_distance() if esp_reader else 0.0
 
-    if 'waypoints' not in config_data:
-        config_data['waypoints'] = {}
+    team = config_data.get('team', 'Biru')
+    wp_key = f'waypoints_{team}'
+
+    if wp_key not in config_data:
+        config_data[wp_key] = {}
     
-    config_data['waypoints'][wp] = {
+    config_data[wp_key][wp] = {
         "lat": lat,
         "lon": lon,
         "alt_pixhawk": round(alt_px, 2),
@@ -374,7 +378,7 @@ def calibrate(wp):
         "yaw": round(yaw, 2)
     }
     save_config()
-    return jsonify({"status": "success", "data": config_data['waypoints'][wp]})
+    return jsonify({"status": "success", "data": config_data[wp_key][wp]})
 
 if __name__ == '__main__':
     print("🚀 Memulai Web Server Kalibrasi di port 5000...")

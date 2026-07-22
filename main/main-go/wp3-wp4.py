@@ -13,6 +13,7 @@ import json
 import argparse
 import numpy as np
 from pymavlink import mavutil
+import web_dashboard_mission
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.abspath(os.path.join(BASE_DIR, '..', 'config', 'krti_config.json'))
@@ -72,15 +73,23 @@ def rotate_to_yaw(master, target_yaw):
         target_yaw, 15, 1, 0, 0, 0, 0
     )
 
-def get_telemetry(master):
-    lat, lon, alt, yaw = None, None, None, None
-    msg_gps = master.recv_match(type=['GLOBAL_POSITION_INT'], blocking=False)
-    if msg_gps:
-        lat = msg_gps.lat / 1e7
-        lon = msg_gps.lon / 1e7
-        alt = msg_gps.relative_alt / 1000.0
-        yaw = msg_gps.hdg / 100.0 if msg_gps.hdg != 65535 else 0.0
-    return lat, lon, alt, yaw
+def get_telemetry(master, current_data):
+    while True:
+        msg = master.recv_match(type=['GLOBAL_POSITION_INT', 'ATTITUDE', 'SYS_STATUS'], blocking=False)
+        if not msg:
+            break
+        mtype = msg.get_type()
+        if mtype == 'GLOBAL_POSITION_INT':
+            current_data['lat'] = msg.lat / 1e7
+            current_data['lon'] = msg.lon / 1e7
+            current_data['alt'] = msg.relative_alt / 1000.0
+            current_data['yaw'] = msg.hdg / 100.0 if msg.hdg != 65535 else current_data.get('yaw', 0.0)
+        elif mtype == 'ATTITUDE':
+            current_data['roll'] = msg.roll
+            current_data['pitch'] = msg.pitch
+        elif mtype == 'SYS_STATUS':
+            current_data['battery'] = msg.battery_remaining
+    return current_data
 
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 6371e3
@@ -102,12 +111,17 @@ def main():
     cam_index = config.get('camera_index', 0)
     target_alt = config.get('target_altitude', 2.0)
     
-    wp_target = config.get('waypoints', {}).get('wp4', {})
+    team = config.get('team', 'Biru')
+    wp_key = f'waypoints_{team}'
+    wp_target = config.get(wp_key, {}).get('wp4', {})
     if not wp_target.get('lat'):
         print("❌ ERROR: Data WP4 belum dikalibrasi!")
         sys.exit(1)
 
     print(f"🎯 Target WP4: Lat {wp_target['lat']}, Lon {wp_target['lon']}, Yaw {wp_target['yaw']}")
+
+    # Mulai Web Dashboard
+    web_dashboard_mission.start_dashboard(team, port=5003)
 
     master = connect_pixhawk(port, baud)
     if os.name == 'nt': cap = cv2.VideoCapture(cam_index, cv2.CAP_DSHOW)
@@ -123,14 +137,16 @@ def main():
 
     state = STATE_INIT
     stable_start_time = 0
+    cur_telemetry = {'lat': 0.0, 'lon': 0.0, 'alt': 0.0, 'yaw': 0.0, 'roll': 0.0, 'pitch': 0.0, 'battery': -1}
     cur_lat, cur_lon, cur_yaw = None, None, None
 
     print("\n🚀 Menunggu mode GUIDED untuk memulai rotasi ke WP4.")
     
     try:
         while True:
-            t_lat, t_lon, _, t_yaw = get_telemetry(master)
-            if t_lat is not None: cur_lat, cur_lon, cur_yaw = t_lat, t_lon, t_yaw
+            cur_telemetry = get_telemetry(master, cur_telemetry)
+            if cur_telemetry['lat'] != 0.0:
+                cur_lat, cur_lon, cur_yaw = cur_telemetry['lat'], cur_telemetry['lon'], cur_telemetry['yaw']
 
             msg = master.recv_match(type='HEARTBEAT', blocking=False)
             mode = mavutil.mode_string_v10(msg) if msg else "UNKNOWN"
@@ -218,6 +234,14 @@ def main():
             cv2.putText(display_frame, f"MODE : {mode}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv2.putText(display_frame, f"STATE: {state_str}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
             cv2.imshow("Navigasi WP3->WP4", display_frame)
+
+            # Update dashboard
+            web_dashboard_mission.update_dashboard(
+                mode=mode, state_str=state_str,
+                lat=cur_telemetry['lat'], lon=cur_telemetry['lon'], alt=cur_telemetry['alt'],
+                yaw=cur_telemetry['yaw'], roll=cur_telemetry['roll'], pitch=cur_telemetry['pitch'],
+                battery=cur_telemetry['battery']
+            )
 
             master.mav.heartbeat_send(
                 mavutil.mavlink.MAV_TYPE_GCS,
