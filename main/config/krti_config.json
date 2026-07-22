@@ -1,0 +1,47 @@
+{
+    "pixhawk_port": "COM3",
+    "pixhawk_baudrate": 115200,
+    "esp32_port": "COM5",
+    "esp32_baudrate": 115200,
+    "camera_index": 0,
+    "target_altitude": 2.0,
+    "drone_speed": 1.5,
+    "team": "Biru",
+    "waypoints": {
+        "wp1": {
+            "lat": 0.0,
+            "lon": 0.0,
+            "alt_pixhawk": 0.0,
+            "alt_esp32": 0.0,
+            "yaw": 0.0
+        },
+        "wp2": {
+            "lat": 0.0,
+            "lon": 0.0,
+            "alt_pixhawk": 0.0,
+            "alt_esp32": 0.0,
+            "yaw": 0.0
+        },
+        "wp3": {
+            "lat": 0.0,
+            "lon": 0.0,
+            "alt_pixhawk": 0.0,
+            "alt_esp32": 0.0,
+            "yaw": 0.0
+        },
+        "wp4": {
+            "lat": 0.0,
+            "lon": 0.0,
+            "alt_pixhawk": 0.0,
+            "alt_esp32": 0.0,
+            "yaw": 0.0
+        },
+        "wp5": {
+            "lat": 0.0,
+            "lon": 0.0,
+            "alt_pixhawk": 0.0,
+            "alt_esp32": 0.0,
+            "yaw": 0.0
+        }
+    }
+}
