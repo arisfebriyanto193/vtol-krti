@@ -35,7 +35,7 @@ SensorPin sensorPins[NUM_SENSORS] = {
   {"BELAKANG", 5,  4},
   {"KANAN",    7, 6},
   {"KIRI",     1, 2},
-  {"ATAS",     8,  9},
+  {"ATAS",     38,  39},
   {"BAWAH",    42, 41}
 };
 
