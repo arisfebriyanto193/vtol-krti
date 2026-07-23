@@ -1,7 +1,7 @@
 {
-    "pixhawk_port": "COM3",
+    "pixhawk_port": "/dev/ttyACM0",
     "pixhawk_baudrate": 115200,
-    "esp32_port": "COM5",
+    "esp32_port": "/dev/ttyACM0",
     "esp32_baudrate": 115200,
     "camera_index": 0,
     "target_altitude": 2.0,
