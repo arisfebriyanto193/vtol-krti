@@ -107,6 +107,12 @@ class SensorMonitor:
         sensors = data.get("sensors", {})
         problems = data.get("problems", [])
         ts = data.get("ts", 0)
+        
+        # Warna ANSI untuk terminal
+        RED = "\033[91m"
+        GREEN = "\033[92m"
+        YELLOW = "\033[93m"
+        RESET = "\033[0m"
 
         # format baris tampilan realtime
         row_values = []
@@ -117,24 +123,27 @@ class SensorMonitor:
 
             if dist is not None:
                 self.last_good_reading[name] = dist
-                row_values.append(f"{dist:>6.1f}cm")
+                val_str = f"{dist:>6.1f}cm"
+                padded_val = f"{val_str:<10}" # Beri jarak 10 karakter agar sejajar
+                
+                if dist < 0:
+                    row_values.append(f"{RED}{padded_val}{RESET}")
+                else:
+                    row_values.append(f"{GREEN}{padded_val}{RESET}")
             else:
-                row_values.append(f"{'--':>8}")
+                row_values.append(f"{'--':<10}")
 
             if status != "OK":
                 self.problem_history[name] += 1
 
-        status_str = "OK" if not problems else f"WARNING ({len(problems)} sensor bermasalah)"
+        if problems:
+            status_str = f"{YELLOW}WARNING ({len(problems)} bermasalah){RESET}"
+        else:
+            status_str = f"{GREEN}OK{RESET}"
+            
         time_str = datetime.now().strftime("%H:%M:%S")
 
-        print(f"{time_str:<12} | " + " | ".join(f"{v:<10}" for v in row_values) + f" | {status_str}")
-
-        # tampilkan detail masalah begitu terdeteksi
-        if problems:
-            for p in problems:
-                print(f"    -> [!] Sensor '{p['sensor']}': {p['reason']} "
-                      f"(error beruntun: {p['consecutive_errors']}, "
-                      f"update terakhir: {p['last_update_ms_ago']}ms lalu)")
+        print(f"{time_str:<12} | " + " | ".join(row_values) + f" | {status_str}")
 
         # log ke file jika diminta
         if self.log_file:
