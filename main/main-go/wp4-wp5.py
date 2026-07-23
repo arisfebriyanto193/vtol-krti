@@ -12,6 +12,8 @@ import time
 import json
 import argparse
 import numpy as np
+import threading
+import math
 from pymavlink import mavutil
 import web_dashboard_mission
 
@@ -38,6 +40,36 @@ def load_config():
     print(f"❌ ERROR: Konfigurasi tidak ditemukan di {CONFIG_PATH}")
     sys.exit(1)
 
+# Globals for telemetry
+drone_telemetry = {'lat': 0.0, 'lon': 0.0, 'alt': 0.0, 'yaw': 0.0, 'roll': 0.0, 'pitch': 0.0, 'battery': -1}
+drone_mode = "UNKNOWN"
+
+def pixhawk_loop(master):
+    global drone_telemetry, drone_mode
+    while True:
+        try:
+            msg = master.recv_match(blocking=True, timeout=1.0)
+            if not msg:
+                continue
+            mtype = msg.get_type()
+            if mtype == 'GLOBAL_POSITION_INT':
+                drone_telemetry['lat'] = msg.lat / 1e7
+                drone_telemetry['lon'] = msg.lon / 1e7
+                drone_telemetry['alt'] = msg.relative_alt / 1000.0
+            elif mtype == 'ATTITUDE':
+                drone_telemetry['roll'] = msg.roll
+                drone_telemetry['pitch'] = msg.pitch
+                yaw_deg = math.degrees(msg.yaw)
+                if yaw_deg < 0: yaw_deg += 360
+                drone_telemetry['yaw'] = yaw_deg
+            elif mtype == 'SYS_STATUS':
+                drone_telemetry['battery'] = msg.battery_remaining
+            elif mtype == 'HEARTBEAT':
+                if msg.type != mavutil.mavlink.MAV_TYPE_GCS:
+                    drone_mode = mavutil.mode_string_v10(msg)
+        except Exception:
+            time.sleep(0.01)
+
 def connect_pixhawk(port, baudrate):
     print(f"Menghubungkan ke Pixhawk di {port} ({baudrate})...")
     master = mavutil.mavlink_connection(port, baud=baudrate)
@@ -45,8 +77,9 @@ def connect_pixhawk(port, baudrate):
     print("✅ Berhasil Terhubung ke Pixhawk!")
     master.mav.request_data_stream_send(
         master.target_system, master.target_component,
-        mavutil.mavlink.MAV_DATA_STREAM_ALL, 5, 1
+        mavutil.mavlink.MAV_DATA_STREAM_ALL, 4, 1
     )
+    threading.Thread(target=pixhawk_loop, args=(master,), daemon=True).start()
     return master
 
 def send_velocity(master, vx, vy, vz):
@@ -122,38 +155,18 @@ def main():
 
     state = STATE_INIT
     stable_start_time = 0
-    cur_telemetry = {'lat': 0.0, 'lon': 0.0, 'alt': 0.0, 'yaw': 0.0, 'roll': 0.0, 'pitch': 0.0, 'battery': -1}
     cur_lat, cur_lon, cur_yaw = None, None, None
-    cur_mode = "UNKNOWN"
 
     print("\n🚀 Menunggu mode GUIDED untuk memulai rotasi ke WP5.")
     
     try:
         while True:
-            # Menguras semua pesan MAVLink di buffer
-            while True:
-                msg = master.recv_match(blocking=False)
-                if not msg:
-                    break
-                mtype = msg.get_type()
-                if mtype == 'GLOBAL_POSITION_INT':
-                    cur_telemetry['lat'] = msg.lat / 1e7
-                    cur_telemetry['lon'] = msg.lon / 1e7
-                    cur_telemetry['alt'] = msg.relative_alt / 1000.0
-                    cur_telemetry['yaw'] = msg.hdg / 100.0 if msg.hdg != 65535 else cur_telemetry['yaw']
-                elif mtype == 'ATTITUDE':
-                    cur_telemetry['roll'] = msg.roll
-                    cur_telemetry['pitch'] = msg.pitch
-                elif mtype == 'SYS_STATUS':
-                    cur_telemetry['battery'] = msg.battery_remaining
-                elif mtype == 'HEARTBEAT':
-                    if msg.type != mavutil.mavlink.MAV_TYPE_GCS:
-                        cur_mode = mavutil.mode_string_v10(msg)
-            
-            if cur_telemetry['lat'] != 0.0:
-                cur_lat, cur_lon, cur_yaw = cur_telemetry['lat'], cur_telemetry['lon'], cur_telemetry['yaw']
+            if drone_telemetry['lat'] != 0.0:
+                cur_lat = drone_telemetry['lat']
+                cur_lon = drone_telemetry['lon']
+                cur_yaw = drone_telemetry['yaw']
 
-            mode = cur_mode
+            mode = drone_mode
 
             ret, frame = cap.read()
             if not ret: continue
@@ -250,9 +263,9 @@ def main():
             # Update dashboard
             web_dashboard_mission.update_dashboard(
                 mode=mode, state_str=state_str,
-                lat=cur_telemetry['lat'], lon=cur_telemetry['lon'], alt=cur_telemetry['alt'],
-                yaw=cur_telemetry['yaw'], roll=cur_telemetry['roll'], pitch=cur_telemetry['pitch'],
-                battery=cur_telemetry['battery']
+                lat=drone_telemetry['lat'], lon=drone_telemetry['lon'], alt=drone_telemetry['alt'],
+                yaw=drone_telemetry['yaw'], roll=drone_telemetry['roll'], pitch=drone_telemetry['pitch'],
+                battery=drone_telemetry['battery']
             )
 
             master.mav.heartbeat_send(
