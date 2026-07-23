@@ -120,6 +120,7 @@ def main():
     baud = config.get('pixhawk_baudrate', 115200)
     cam_index = config.get('camera_index', 0)
     target_alt = config.get('target_altitude', 2.0)
+    use_aruco = config.get('use_aruco_verification', True)
     
     team = config.get('team', 'Biru')
     wp_key = f'waypoints_{team}'
@@ -206,8 +207,12 @@ def main():
                         cv2.putText(display_frame, f"Dist WP2: {dist:.1f} m", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                         
                         if dist < 2.0:
-                            print("✅ Mendekati WP2. Beralih ke pencarian ArUco!")
-                            state = STATE_CENTER_ARUCO
+                            if use_aruco:
+                                print("✅ Mendekati WP2. Beralih ke pencarian ArUco!")
+                                state = STATE_CENTER_ARUCO
+                            else:
+                                print("✅ Mendekati WP2. Verifikasi ArUco DINONAKTIFKAN. SELESAI SEGMEN INI.")
+                                state = STATE_DONE
                         else:
                             goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
 
