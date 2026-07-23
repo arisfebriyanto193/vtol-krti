@@ -8,3 +8,6 @@ venv/
 .env
 .venv
 main/config/krti_config.json
+
+# Log files (generated at runtime)
+*.log
