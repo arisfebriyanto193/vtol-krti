@@ -159,6 +159,10 @@ def main():
     stable_start_time = 0
     cur_lat, cur_lon, cur_yaw = None, None, None
 
+    last_log_time = 0
+    last_yaw_cmd_time = 0
+    last_gps_cmd_time = 0
+
     print("\n🚀 Menunggu mode GUIDED untuk memulai rotasi ke WP5.")
     
     try:
@@ -258,6 +262,10 @@ def main():
                 
                 elif state == STATE_DONE:
                     state_str = "SEGMEN SELESAI (LANDED)"
+
+            if time.time() - last_log_time > 1.0:
+                print(f"[DEBUG] Mode: {mode} | State: {state_str} | Target Yaw: {wp_target['yaw']:.1f} | Cur Yaw: {cur_yaw if cur_yaw else 0:.1f} | Lat/Lon: {cur_lat if cur_lat else 0:.6f}, {cur_lon if cur_lon else 0:.6f}")
+                last_log_time = time.time()
 
             if cur_yaw is not None:
                 cv2.putText(display_frame, f"Cur Yaw: {cur_yaw:.1f} / Target: {wp_target['yaw']:.1f}", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)

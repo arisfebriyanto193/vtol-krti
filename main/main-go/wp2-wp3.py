@@ -149,6 +149,10 @@ def main():
     stable_start_time = 0
     cur_lat, cur_lon, cur_yaw = None, None, None
 
+    last_log_time = 0
+    last_yaw_cmd_time = 0
+    last_gps_cmd_time = 0
+
     print("\n🚀 Menunggu mode GUIDED untuk memulai rotasi ke WP3.")
     
     try:
@@ -179,38 +183,47 @@ def main():
             state_str = ""
             if mode != "GUIDED":
                 state_str = "MENUNGGU MODE GUIDED"
-                state = STATE_INIT
+                state = STATE_INIT # Reset
+                last_yaw_cmd_time = 0
+                last_gps_cmd_time = 0
             else:
                 if state == STATE_INIT:
-                    print("✅ Mode GUIDED aktif. Memulai ROTASI YAW ke WP3.")
+                    print(f"✅ Mode GUIDED aktif. Memulai ROTASI YAW ke target {wp_target['yaw']} derajat.")
                     rotate_to_yaw(master, wp_target['yaw'])
+                    last_yaw_cmd_time = time.time()
                     state = STATE_ROTATE_YAW
 
                 elif state == STATE_ROTATE_YAW:
                     state_str = "ROTASI YAW DI TEMPAT"
                     if cur_yaw is not None:
                         diff = get_shortest_yaw_diff(cur_yaw, wp_target['yaw'])
-                        cv2.putText(display_frame, f"Yaw Diff: {diff:.1f} deg", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-                        if diff < 5.0:
-                            print("✅ Rotasi selesai. Maju ke GPS WP3...")
+                        
+                        if diff < 5.0: # Toleransi 5 derajat
+                            print(f"✅ Rotasi selesai (selisih {diff:.1f}°). Maju ke GPS WP3...")
                             state = STATE_GOTO_GPS
+                            last_gps_cmd_time = 0
                         else:
-                            rotate_to_yaw(master, wp_target['yaw'])
+                            # Re-send perintah maksimal tiap 3 detik (menghindari command spamming)
+                            if time.time() - last_yaw_cmd_time > 3.0:
+                                rotate_to_yaw(master, wp_target['yaw'])
+                                last_yaw_cmd_time = time.time()
 
                 elif state == STATE_GOTO_GPS:
                     state_str = "NAVIGASI MAJU (GPS) -> WP3"
                     if cur_lat and cur_lon:
                         dist = calculate_distance(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
-                        cv2.putText(display_frame, f"Dist WP3: {dist:.1f} m", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                        
                         if dist < 2.0:
                             if use_aruco:
-                                print("✅ Mendekati WP3. Beralih ke pencarian ArUco!")
+                                print(f"✅ Mendekati WP3 (Jarak: {dist:.1f}m). Beralih ke pencarian ArUco!")
                                 state = STATE_CENTER_ARUCO
                             else:
-                                print("✅ Mendekati WP3. Verifikasi ArUco DINONAKTIFKAN. SELESAI SEGMEN INI.")
+                                print(f"✅ Mendekati WP3 (Jarak: {dist:.1f}m). Verifikasi ArUco DINONAKTIFKAN. SELESAI!")
                                 state = STATE_DONE
                         else:
-                            goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
+                            if time.time() - last_gps_cmd_time > 0.5:
+                                goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
+                                last_gps_cmd_time = time.time()
 
                 elif state == STATE_CENTER_ARUCO:
                     state_str = "VISUAL CENTERING WP3"
@@ -244,6 +257,10 @@ def main():
                 elif state == STATE_DONE:
                     state_str = "SEGMEN SELESAI (HOVER)"
                     send_velocity(master, 0, 0, 0)
+
+            if time.time() - last_log_time > 1.0:
+                print(f"[DEBUG] Mode: {mode} | State: {state_str} | Target Yaw: {wp_target['yaw']:.1f} | Cur Yaw: {cur_yaw if cur_yaw else 0:.1f} | Lat/Lon: {cur_lat if cur_lat else 0:.6f}, {cur_lon if cur_lon else 0:.6f}")
+                last_log_time = time.time()
 
             if cur_yaw is not None:
                 cv2.putText(display_frame, f"Cur Yaw: {cur_yaw:.1f} / Target: {wp_target['yaw']:.1f}", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
