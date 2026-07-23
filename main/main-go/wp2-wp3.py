@@ -249,7 +249,7 @@ def main():
                 cv2.putText(display_frame, f"Cur Yaw: {cur_yaw:.1f} / Target: {wp_target['yaw']:.1f}", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             cv2.putText(display_frame, f"MODE : {mode}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv2.putText(display_frame, f"STATE: {state_str}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            cv2.imshow("Navigasi WP2->WP3", display_frame)
+            # cv2.imshow("Navigasi WP2->WP3", display_frame) # Headless mode
 
             # Update dashboard
             web_dashboard_mission.update_dashboard(
@@ -264,7 +264,9 @@ def main():
                 mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0
             )
 
-            if cv2.waitKey(1) & 0xFF == ord('q'): break
+            if not use_aruco:
+                time.sleep(0.05)
+            # if cv2.waitKey(1) & 0xFF == ord('q'): break
 
     except KeyboardInterrupt: pass
     finally:
