@@ -142,11 +142,12 @@ def main():
 
     master = connect_pixhawk(port, baud)
 
-    if os.name == 'nt': cap = cv2.VideoCapture(cam_index, cv2.CAP_DSHOW)
-    else: cap = cv2.VideoCapture(cam_index)
-
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap = None
+    if use_aruco:
+        if os.name == 'nt': cap = cv2.VideoCapture(cam_index, cv2.CAP_DSHOW)
+        else: cap = cv2.VideoCapture(cam_index)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT_TYPE)
     aruco_params = cv2.aruco.DetectorParameters()
@@ -168,8 +169,11 @@ def main():
 
             mode = drone_mode
 
-            ret, frame = cap.read()
-            if not ret: continue
+            if use_aruco and cap is not None:
+                ret, frame = cap.read()
+                if not ret: continue
+            else:
+                frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
             h, w, _ = frame.shape
             cx_frame, cy_frame = w // 2, h // 2
@@ -282,7 +286,8 @@ def main():
     finally:
         try: send_velocity(master, 0, 0, 0)
         except: pass
-        cap.release()
+        if cap is not None:
+            cap.release()
         cv2.destroyAllWindows()
 
 if __name__ == '__main__':
