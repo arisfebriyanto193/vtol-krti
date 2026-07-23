@@ -7,3 +7,4 @@ env/
 venv/
 .env
 .venv
+main/config/krti_config.json

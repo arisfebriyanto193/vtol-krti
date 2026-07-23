@@ -73,32 +73,6 @@ def rotate_to_yaw(master, target_yaw):
         target_yaw, 15, 1, 0, 0, 0, 0
     )
 
-def get_telemetry(master, current_data):
-    while True:
-        msg = master.recv_match(type=['GLOBAL_POSITION_INT', 'ATTITUDE', 'SYS_STATUS'], blocking=False)
-        if not msg:
-            break
-        mtype = msg.get_type()
-        if mtype == 'GLOBAL_POSITION_INT':
-            current_data['lat'] = msg.lat / 1e7
-            current_data['lon'] = msg.lon / 1e7
-            current_data['alt'] = msg.relative_alt / 1000.0
-            current_data['yaw'] = msg.hdg / 100.0 if msg.hdg != 65535 else current_data.get('yaw', 0.0)
-        elif mtype == 'ATTITUDE':
-            current_data['roll'] = msg.roll
-            current_data['pitch'] = msg.pitch
-        elif mtype == 'SYS_STATUS':
-            current_data['battery'] = msg.battery_remaining
-    return current_data
-
-def calculate_distance(lat1, lon1, lat2, lon2):
-    R = 6371e3
-    phi1, phi2 = np.radians(lat1), np.radians(lat2)
-    dphi = np.radians(lat2 - lat1)
-    dlam = np.radians(lon2 - lon1)
-    a = np.sin(dphi/2.0)**2 + np.cos(phi1)*np.cos(phi2)*np.sin(dlam/2.0)**2
-    return R * (2 * np.arctan2(np.sqrt(a), np.sqrt(1-a)))
-
 def get_shortest_yaw_diff(current_yaw, target_yaw):
     diff = (target_yaw - current_yaw) % 360
     if diff > 180: diff -= 360
@@ -140,17 +114,36 @@ def main():
     stable_start_time = 0
     cur_telemetry = {'lat': 0.0, 'lon': 0.0, 'alt': 0.0, 'yaw': 0.0, 'roll': 0.0, 'pitch': 0.0, 'battery': -1}
     cur_lat, cur_lon, cur_yaw = None, None, None
+    cur_mode = "UNKNOWN"
 
     print("\n🚀 Menunggu mode GUIDED untuk memulai rotasi ke WP3.")
     
     try:
         while True:
-            cur_telemetry = get_telemetry(master, cur_telemetry)
+            # Menguras semua pesan MAVLink di buffer
+            while True:
+                msg = master.recv_match(blocking=False)
+                if not msg:
+                    break
+                mtype = msg.get_type()
+                if mtype == 'GLOBAL_POSITION_INT':
+                    cur_telemetry['lat'] = msg.lat / 1e7
+                    cur_telemetry['lon'] = msg.lon / 1e7
+                    cur_telemetry['alt'] = msg.relative_alt / 1000.0
+                    cur_telemetry['yaw'] = msg.hdg / 100.0 if msg.hdg != 65535 else cur_telemetry['yaw']
+                elif mtype == 'ATTITUDE':
+                    cur_telemetry['roll'] = msg.roll
+                    cur_telemetry['pitch'] = msg.pitch
+                elif mtype == 'SYS_STATUS':
+                    cur_telemetry['battery'] = msg.battery_remaining
+                elif mtype == 'HEARTBEAT':
+                    if msg.type != mavutil.mavlink.MAV_TYPE_GCS:
+                        cur_mode = mavutil.mode_string_v10(msg)
+            
             if cur_telemetry['lat'] != 0.0:
                 cur_lat, cur_lon, cur_yaw = cur_telemetry['lat'], cur_telemetry['lon'], cur_telemetry['yaw']
 
-            msg = master.recv_match(type='HEARTBEAT', blocking=False)
-            mode = mavutil.mode_string_v10(msg) if msg else "UNKNOWN"
+            mode = cur_mode
 
             ret, frame = cap.read()
             if not ret: continue
