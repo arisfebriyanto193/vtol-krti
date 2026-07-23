@@ -2,6 +2,7 @@ import serial
 import json
 import threading
 import time
+import re
 
 class ESP32Reader:
     def __init__(self, port, baudrate=115200):
@@ -32,12 +33,20 @@ class ESP32Reader:
         while self.running and self.ser and self.ser.is_open:
             try:
                 line = self.ser.readline().decode('utf-8', errors='ignore').strip()
-                if line:
-                    try:
-                        data = json.loads(line)
-                        self.latest_data = data
-                    except json.JSONDecodeError:
-                        pass
+                if line and not line.startswith("-"):
+                    # Extract sensor data format: KIRI: 10.5 cm
+                    matches = re.findall(r'([A-Z]+):\s*([-\d.]+)\s*cm', line)
+                    if matches:
+                        sensors_data = {}
+                        for key, val_str in matches:
+                            try:
+                                sensors_data[key] = {"distance_cm": float(val_str)}
+                            except ValueError:
+                                pass
+                        
+                        if sensors_data:
+                            self.latest_data["sensors"] = sensors_data
+                            self.latest_data["ts"] = time.time()
             except Exception as e:
                 print(f"[ESP32 READ ERROR] {e}")
                 time.sleep(1)
