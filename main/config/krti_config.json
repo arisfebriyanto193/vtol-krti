@@ -6,7 +6,7 @@
     "camera_index": 0,
     "target_altitude": 2.0,
     "drone_speed": 1.5,
-    "team": "Biru",
+    "team": "Merah",
     "waypoints": {
         "wp1": {
             "lat": 0.0,
