@@ -1,5 +1,5 @@
 {
-    "pixhawk_port": "/dev/ttyACM0",
+    "pixhawk_port": "/dev/ttyACM1",
     "pixhawk_baudrate": 115200,
     "esp32_port": "/dev/ttyACM0",
     "esp32_baudrate": 115200,
