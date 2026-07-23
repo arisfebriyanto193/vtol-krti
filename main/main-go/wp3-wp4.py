@@ -111,6 +111,23 @@ def get_shortest_yaw_diff(current_yaw, target_yaw):
     if diff > 180: diff -= 360
     return abs(diff)
 
+def calculate_distance(lat1, lon1, lat2, lon2):
+    R = 6371000.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+LOG_FILE = os.path.join(BASE_DIR, 'wp3-wp4.log')
+def log_msg(msg, level="INFO"):
+    ts = time.strftime('%Y-%m-%d %H:%M:%S')
+    line = f"[{ts}] [{level}] {msg}"
+    print(line)
+    try:
+        with open(LOG_FILE, 'a') as f: f.write(line + '\n')
+    except Exception: pass
+
 def main():
     config = load_config()
     port = config.get('pixhawk_port', '/dev/ttyACM0')
@@ -153,7 +170,8 @@ def main():
     last_yaw_cmd_time = 0
     last_gps_cmd_time = 0
 
-    print("\n🚀 Menunggu mode GUIDED untuk memulai rotasi ke WP4.")
+    log_msg(f"==== PROGRAM DIMULAI ==== Target WP4: Lat={wp_target['lat']}, Lon={wp_target['lon']}, Yaw={wp_target['yaw']}")
+    log_msg("Menunggu mode GUIDED untuk memulai rotasi ke WP4.")
     
     try:
         while True:
@@ -188,7 +206,7 @@ def main():
                 last_gps_cmd_time = 0
             else:
                 if state == STATE_INIT:
-                    print(f"✅ Mode GUIDED aktif. Memulai ROTASI YAW ke target {wp_target['yaw']} derajat.")
+                    log_msg(f"Mode GUIDED aktif. Mengirim ROTASI YAW ke target {wp_target['yaw']:.1f} deg.", "ACTION")
                     rotate_to_yaw(master, wp_target['yaw'])
                     last_yaw_cmd_time = time.time()
                     state = STATE_ROTATE_YAW
@@ -198,13 +216,13 @@ def main():
                     if cur_yaw is not None:
                         diff = get_shortest_yaw_diff(cur_yaw, wp_target['yaw'])
                         
-                        if diff < 5.0: # Toleransi 5 derajat
-                            print(f"✅ Rotasi selesai (selisih {diff:.1f}°). Maju ke GPS WP4...")
+                        if diff < 5.0:
+                            log_msg(f"Rotasi SELESAI (selisih {diff:.1f} deg). Transisi ke STATE_GOTO_GPS.", "ACTION")
                             state = STATE_GOTO_GPS
                             last_gps_cmd_time = 0
                         else:
-                            # Re-send perintah maksimal tiap 3 detik (menghindari command spamming)
                             if time.time() - last_yaw_cmd_time > 3.0:
+                                log_msg(f"Re-send Yaw cmd: Cur={cur_yaw:.1f}, Target={wp_target['yaw']:.1f}, Diff={diff:.1f}", "ACTION")
                                 rotate_to_yaw(master, wp_target['yaw'])
                                 last_yaw_cmd_time = time.time()
 
@@ -215,13 +233,14 @@ def main():
                         
                         if dist < 2.0:
                             if use_aruco:
-                                print(f"✅ Mendekati WP4 (Jarak: {dist:.1f}m). Beralih ke pencarian ArUco!")
+                                log_msg(f"Mendekati WP4 (Jarak: {dist:.1f}m). Beralih ke STATE_CENTER_ARUCO.", "ACTION")
                                 state = STATE_CENTER_ARUCO
                             else:
-                                print(f"✅ Mendekati WP4 (Jarak: {dist:.1f}m). Verifikasi ArUco DINONAKTIFKAN. SELESAI!")
+                                log_msg(f"Mendekati WP4 (Jarak: {dist:.1f}m). ArUco NONAKTIF. SELESAI SEGMEN.", "ACTION")
                                 state = STATE_DONE
                         else:
                             if time.time() - last_gps_cmd_time > 0.5:
+                                log_msg(f"Mengirim GPS target. Jarak sisa: {dist:.1f}m", "NAV")
                                 goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
                                 last_gps_cmd_time = time.time()
 
@@ -259,7 +278,7 @@ def main():
                     send_velocity(master, 0, 0, 0)
 
             if time.time() - last_log_time > 1.0:
-                print(f"[DEBUG] Mode: {mode} | State: {state_str} | Target Yaw: {wp_target['yaw']:.1f} | Cur Yaw: {cur_yaw if cur_yaw else 0:.1f} | Lat/Lon: {cur_lat if cur_lat else 0:.6f}, {cur_lon if cur_lon else 0:.6f}")
+                log_msg(f"Mode={mode} | State={state_str} | TgtYaw={wp_target['yaw']:.1f} | CurYaw={cur_yaw if cur_yaw else 0:.1f} | Lat={cur_lat if cur_lat else 0:.6f} | Lon={cur_lon if cur_lon else 0:.6f} | Alt={drone_telemetry['alt']:.1f}m")
                 last_log_time = time.time()
 
             if cur_yaw is not None:

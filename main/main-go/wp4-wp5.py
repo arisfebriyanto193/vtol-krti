@@ -121,6 +121,23 @@ def get_shortest_yaw_diff(current_yaw, target_yaw):
     if diff > 180: diff -= 360
     return abs(diff)
 
+def calculate_distance(lat1, lon1, lat2, lon2):
+    R = 6371000.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+LOG_FILE = os.path.join(BASE_DIR, 'wp4-wp5.log')
+def log_msg(msg, level="INFO"):
+    ts = time.strftime('%Y-%m-%d %H:%M:%S')
+    line = f"[{ts}] [{level}] {msg}"
+    print(line)
+    try:
+        with open(LOG_FILE, 'a') as f: f.write(line + '\n')
+    except Exception: pass
+
 def main():
     config = load_config()
     port = config.get('pixhawk_port', '/dev/ttyACM0')
