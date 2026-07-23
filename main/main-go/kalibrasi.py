@@ -235,8 +235,9 @@ HTML_TEMPLATE = """
                 <div class="data-text" id="{{ wp_name }}-data">
                     Lat: {{ wp_data.get(wp_name, {}).get('lat', 0.0) }}<br>
                     Lon: {{ wp_data.get(wp_name, {}).get('lon', 0.0) }}<br>
-                    Alt PX: {{ wp_data.get(wp_name, {}).get('alt_pixhawk', 0.0) }} m<br>
-                    Alt ESP: {{ wp_data.get(wp_name, {}).get('alt_esp32', 0.0) }} cm<br>
+                    <b>Target Alt: {{ wp_data.get(wp_name, {}).get('target_alt', 0.0) }} m</b><br>
+                    Alt PX (saat kalibrasi): {{ wp_data.get(wp_name, {}).get('alt_pixhawk', 0.0) }} m<br>
+                    Alt ESP (saat kalibrasi): {{ wp_data.get(wp_name, {}).get('alt_esp32', 0.0) }} cm<br>
                     Yaw: {{ wp_data.get(wp_name, {}).get('yaw', 0.0) }} &deg;
                 </div>
             </div>
@@ -255,11 +256,24 @@ HTML_TEMPLATE = """
         }
 
         function calibrate(wp) {
-            fetch('/calibrate/' + wp, { method: 'POST' })
+            let targetAlt = prompt("Masukkan target ketinggian (meter) untuk " + wp.toUpperCase() + ":", "1.5");
+            if (targetAlt === null) return; // User membatalkan
+            
+            targetAlt = parseFloat(targetAlt);
+            if (isNaN(targetAlt)) {
+                alert("Ketinggian harus berupa angka!");
+                return;
+            }
+
+            fetch('/calibrate/' + wp, { 
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ target_alt: targetAlt })
+            })
             .then(res => res.json())
             .then(data => {
                 if(data.status === 'success') {
-                    alert('Kalibrasi ' + wp.toUpperCase() + ' Berhasil!');
+                    alert('Kalibrasi ' + wp.toUpperCase() + ' Berhasil dengan target ' + targetAlt + 'm!');
                     location.reload();
                 } else {
                     alert('Gagal: ' + data.message);
@@ -345,6 +359,10 @@ def api_telemetry():
 @app.route('/calibrate/<wp>', methods=['POST'])
 def calibrate(wp):
     global master, esp_reader
+    
+    data = request.json or {}
+    target_alt = data.get('target_alt', 0.0)
+
     valid_wps = ['wp1', 'wp2', 'wp3', 'wp4', 'wp5']
     if wp not in valid_wps:
         return jsonify({"status": "error", "message": "WP tidak valid"}), 400
@@ -375,7 +393,8 @@ def calibrate(wp):
         "lon": lon,
         "alt_pixhawk": round(alt_px, 2),
         "alt_esp32": round(alt_esp, 2),
-        "yaw": round(yaw, 2)
+        "yaw": round(yaw, 2),
+        "target_alt": float(target_alt)
     }
     save_config()
     return jsonify({"status": "success", "data": config_data[wp_key][wp]})
