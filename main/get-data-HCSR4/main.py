@@ -19,6 +19,7 @@ import json
 import time
 import argparse
 import sys
+import re
 from datetime import datetime
 from collections import defaultdict
 
@@ -59,18 +60,41 @@ class SensorMonitor:
         try:
             while True:
                 line = self.ser.readline().decode("utf-8", errors="ignore").strip()
-                if not line:
+                if not line or line.startswith("-") or line.startswith("="):
                     continue
 
                 self.total_packets += 1
 
-                try:
-                    data = json.loads(line)
-                except json.JSONDecodeError:
+                matches = re.findall(r'([A-Z]+):\s*([-\d.]+)\s*cm', line)
+                if matches:
+                    sensors_data = {}
+                    problems = []
+                    for key, val_str in matches:
+                        try:
+                            val = float(val_str)
+                            status = "OK" if val >= 0 else "ERROR"
+                            sensors_data[key] = {"distance_cm": val, "status": status}
+                            if val < 0:
+                                problems.append({
+                                    "sensor": key, 
+                                    "reason": "Tidak ada pantulan (-1)", 
+                                    "consecutive_errors": 1, 
+                                    "last_update_ms_ago": 0
+                                })
+                        except ValueError:
+                            pass
+                    
+                    if sensors_data:
+                        data = {
+                            "sensors": sensors_data,
+                            "problems": problems,
+                            "ts": time.time()
+                        }
+                        self._process_packet(data)
+                    else:
+                        self.malformed_packets += 1
+                else:
                     self.malformed_packets += 1
-                    continue  # skip baris yang bukan JSON valid (kadang ada noise/print debug)
-
-                self._process_packet(data)
 
         except KeyboardInterrupt:
             print("\n\nDihentikan oleh user.")
