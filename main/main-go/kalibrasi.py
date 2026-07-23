@@ -37,9 +37,16 @@ if config_data.get('esp32_port'):
     esp_reader = ESP32Reader(port=config_data['esp32_port'], baudrate=config_data.get('esp32_baudrate', 115200))
     esp_reader.start()
 
+# Data global untuk Pixhawk
+drone_lat = 0.0
+drone_lon = 0.0
+drone_alt_px = 0.0
+drone_yaw = 0.0
+
 # Connect ke Pixhawk
-def connect_pixhawk():
-    global master
+def pixhawk_loop():
+    global master, drone_lat, drone_lon, drone_alt_px, drone_yaw
+    import math
     port = config_data.get('pixhawk_port')
     baud = config_data.get('pixhawk_baudrate', 115200)
     if not port:
@@ -50,15 +57,33 @@ def connect_pixhawk():
         master.wait_heartbeat(timeout=3)
         master.mav.request_data_stream_send(
             master.target_system, master.target_component,
-            mavutil.mavlink.MAV_DATA_STREAM_ALL, 2, 1
+            mavutil.mavlink.MAV_DATA_STREAM_ALL, 4, 1
         )
         print("✅ Terhubung ke Pixhawk")
     except Exception as e:
         print(f"❌ Gagal koneksi Pixhawk: {e}")
         master = None
+        return
+
+    while True:
+        try:
+            msg = master.recv_match(blocking=True, timeout=1.0)
+            if msg:
+                msg_type = msg.get_type()
+                if msg_type == 'GLOBAL_POSITION_INT':
+                    drone_lat = msg.lat / 1e7
+                    drone_lon = msg.lon / 1e7
+                    drone_alt_px = msg.relative_alt / 1000.0
+                elif msg_type == 'ATTITUDE':
+                    yaw_deg = math.degrees(msg.yaw)
+                    if yaw_deg < 0:
+                        yaw_deg += 360
+                    drone_yaw = yaw_deg
+        except Exception:
+            time.sleep(0.1)
 
 # Jalankan koneksi di awal
-threading.Thread(target=connect_pixhawk, daemon=True).start()
+threading.Thread(target=pixhawk_loop, daemon=True).start()
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -330,35 +355,25 @@ def set_team():
 
 @app.route('/api/telemetry')
 def api_telemetry():
-    global master, esp_reader
-    lat, lon, alt_px, yaw = 0.0, 0.0, 0.0, 0.0
-    px_conn = False
+    global master, esp_reader, drone_lat, drone_lon, drone_alt_px, drone_yaw
     
-    if master is not None:
-        px_conn = True
-        msg = master.recv_match(type=['GLOBAL_POSITION_INT'], blocking=False)
-        if msg:
-            lat = msg.lat / 1e7
-            lon = msg.lon / 1e7
-            alt_px = msg.relative_alt / 1000.0
-            yaw = msg.hdg / 100.0 if msg.hdg != 65535 else 0.0
-
+    px_conn = (master is not None)
     alt_esp = esp_reader.get_bottom_distance() if esp_reader else 0.0
     esp_conn = esp_reader.running if esp_reader else False
 
     return jsonify({
         "pixhawk_connected": px_conn,
         "esp_connected": esp_conn,
-        "lat": lat,
-        "lon": lon,
-        "alt_px": alt_px,
+        "lat": drone_lat,
+        "lon": drone_lon,
+        "alt_px": drone_alt_px,
         "alt_esp": alt_esp,
-        "yaw": yaw
+        "yaw": drone_yaw
     })
 
 @app.route('/calibrate/<wp>', methods=['POST'])
 def calibrate(wp):
-    global master, esp_reader
+    global master, esp_reader, drone_lat, drone_lon, drone_alt_px, drone_yaw
     
     data = request.json or {}
     target_alt = data.get('target_alt', 0.0)
@@ -370,15 +385,9 @@ def calibrate(wp):
     if not master:
         return jsonify({"status": "error", "message": "Pixhawk tidak terhubung"}), 400
 
-    # Ambil latest GPS & Heading
-    msg = master.recv_match(type=['GLOBAL_POSITION_INT'], blocking=True, timeout=2.0)
-    if not msg:
-        return jsonify({"status": "error", "message": "Gagal mendapatkan koordinat GPS (Tidak ada fix)"}), 400
-
-    lat = msg.lat / 1e7
-    lon = msg.lon / 1e7
-    alt_px = msg.relative_alt / 1000.0
-    yaw = msg.hdg / 100.0 if msg.hdg != 65535 else 0.0
+    # Pastikan data MAVLink sudah mulai terbaca
+    if drone_lat == 0.0 and drone_lon == 0.0 and drone_yaw == 0.0:
+        return jsonify({"status": "error", "message": "Menunggu data GPS/Sensor dari Pixhawk..."}), 400
     
     alt_esp = esp_reader.get_bottom_distance() if esp_reader else 0.0
 
@@ -389,11 +398,11 @@ def calibrate(wp):
         config_data[wp_key] = {}
     
     config_data[wp_key][wp] = {
-        "lat": lat,
-        "lon": lon,
-        "alt_pixhawk": round(alt_px, 2),
+        "lat": drone_lat,
+        "lon": drone_lon,
+        "alt_pixhawk": round(drone_alt_px, 2),
         "alt_esp32": round(alt_esp, 2),
-        "yaw": round(yaw, 2),
+        "yaw": round(drone_yaw, 2),
         "target_alt": float(target_alt)
     }
     save_config()
