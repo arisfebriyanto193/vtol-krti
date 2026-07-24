@@ -26,16 +26,18 @@ BAUDRATE = 24000000
 
 display = ili9341.ILI9341(
     spi,
-    rotation=0, # Set rotasi ke 0 agar resolusi tetap 240x320 (Portrait)
+    rotation=90, # Set rotasi ke 90 untuk Landscape
+    bgr=True,    # Perbaiki warna Red dan Blue yang terbalik
     cs=cs_pin,
     dc=dc_pin,
     rst=reset_pin,
     baudrate=BAUDRATE,
 )
 
-# Gunakan ukuran fisik hardware untuk PIL Image
-width = 240
-height = 320
+# Gunakan ukuran canvas Landscape (320x240)
+# Library akan secara otomatis men-transpose image ini agar sesuai dengan buffer hardware
+width = 320
+height = 240
 image = Image.new("RGB", (width, height))
 draw = ImageDraw.Draw(image)
 
@@ -44,7 +46,7 @@ draw.rectangle((0, 0, width, height), outline=0, fill=(0, 0, 0))
 display.image(image)
 print("Menjalankan test LCD TFT 2.8 inci...")
 
-# Gambar kotak merah dengan isian biru
+# Gambar kotak merah dengan isian biru (warna sekarang seharusnya normal karena bgr=True)
 draw.rectangle((10, 10, width - 10, height - 10), outline=(255, 0, 0), fill=(0, 0, 255))
 
 # Tulis teks
