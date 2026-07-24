@@ -26,16 +26,16 @@ BAUDRATE = 24000000
 
 display = ili9341.ILI9341(
     spi,
-    rotation=90, # Sesuaikan rotasi (0, 90, 180, 270)
+    rotation=0, # Set rotasi ke 0 agar resolusi tetap 240x320 (Portrait)
     cs=cs_pin,
     dc=dc_pin,
     rst=reset_pin,
     baudrate=BAUDRATE,
 )
 
-# Buat canvas kosong menggunakan library PIL (Pillow)
-width = display.width
-height = display.height
+# Gunakan ukuran fisik hardware untuk PIL Image
+width = 240
+height = 320
 image = Image.new("RGB", (width, height))
 draw = ImageDraw.Draw(image)
 
@@ -48,7 +48,7 @@ print("Menjalankan test LCD TFT 2.8 inci...")
 draw.rectangle((10, 10, width - 10, height - 10), outline=(255, 0, 0), fill=(0, 0, 255))
 
 # Tulis teks
-try:
+try:    
     # Coba gunakan font sistem
     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
 except IOError:
