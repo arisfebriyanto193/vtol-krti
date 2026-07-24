@@ -27,7 +27,6 @@ BAUDRATE = 24000000
 display = ili9341.ILI9341(
     spi,
     rotation=90, # Set rotasi ke 90 untuk Landscape
-    bgr=True,    # Perbaiki warna Red dan Blue yang terbalik
     cs=cs_pin,
     dc=dc_pin,
     rst=reset_pin,
@@ -46,8 +45,10 @@ draw.rectangle((0, 0, width, height), outline=0, fill=(0, 0, 0))
 display.image(image)
 print("Menjalankan test LCD TFT 2.8 inci...")
 
-# Gambar kotak merah dengan isian biru (warna sekarang seharusnya normal karena bgr=True)
-draw.rectangle((10, 10, width - 10, height - 10), outline=(255, 0, 0), fill=(0, 0, 255))
+# Gambar kotak. Karena display membaca dalam format BGR, kita tukar warna secara manual.
+# Warna normal: outline Merah (255, 0, 0), fill Biru (0, 0, 255)
+# Ditukar BGR : outline Biru (0, 0, 255), fill Merah (255, 0, 0)
+draw.rectangle((10, 10, width - 10, height - 10), outline=(0, 0, 255), fill=(255, 0, 0))
 
 # Tulis teks
 try:    
@@ -66,8 +67,9 @@ font_height = bottom - top
 x = width // 2 - font_width // 2
 y = height // 2 - font_height // 2
 
-# Tulis teks dengan warna kuning
-draw.text((x, y), text, font=font, fill=(255, 255, 0))
+# Tulis teks. Warna Kuning normal (255, 255, 0).
+# Ditukar BGR: (0, 255, 255) - Cyan
+draw.text((x, y), text, font=font, fill=(0, 255, 255))
 
 # Tampilkan ke layar LCD
 display.image(image)
