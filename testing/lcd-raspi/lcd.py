@@ -26,7 +26,9 @@ BAUDRATE = 24000000
 
 display = ili9341.ILI9341(
     spi,
-    rotation=90, # Set rotasi ke 90 untuk Landscape
+    rotation=90, # Set rotasi ke 90 untuk orientasi hardware Landscape
+    width=320,   # Wajib di-override agar library mengizinkan gambar 320x240
+    height=240,
     cs=cs_pin,
     dc=dc_pin,
     rst=reset_pin,
@@ -34,7 +36,6 @@ display = ili9341.ILI9341(
 )
 
 # Gunakan ukuran canvas Landscape (320x240)
-# Library akan secara otomatis men-transpose image ini agar sesuai dengan buffer hardware
 width = 320
 height = 240
 image = Image.new("RGB", (width, height))
@@ -42,7 +43,8 @@ draw = ImageDraw.Draw(image)
 
 # Bersihkan layar (isi dengan warna hitam)
 draw.rectangle((0, 0, width, height), outline=0, fill=(0, 0, 0))
-display.image(image)
+# PERHATIAN: bypass rotasi internal library dengan rotation=0
+display.image(image, rotation=0)
 print("Menjalankan test LCD TFT 2.8 inci...")
 
 # Gambar kotak. Karena display membaca dalam format BGR, kita tukar warna secara manual.
@@ -72,12 +74,12 @@ y = height // 2 - font_height // 2
 draw.text((x, y), text, font=font, fill=(0, 255, 255))
 
 # Tampilkan ke layar LCD
-display.image(image)
+display.image(image, rotation=0)
 
 print("Tampilan berhasil dirender. Menunggu 5 detik...")
 time.sleep(5)
 
 # Bersihkan layar kembali sebelum keluar
 draw.rectangle((0, 0, width, height), outline=0, fill=(0, 0, 0))
-display.image(image)
+display.image(image, rotation=0)
 print("Test Selesai.")
