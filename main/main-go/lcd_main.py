@@ -255,25 +255,28 @@ def get_ip_address():
     try:
         ip = subprocess.check_output(['hostname', '-I'], text=True).strip()
         return ip if ip else "Tidak ada IP"
-    except Exception:
+    except Exception as e:
+        print(f"Error get_ip: {e}")
         return "Error"
 
 def get_current_wifi():
     try:
         wifi = subprocess.check_output(['iwgetid', '-r'], text=True).strip()
         return wifi if wifi else "Tidak Konek"
-    except Exception:
+    except Exception as e:
+        print(f"Error get_wifi: {e}")
         return "Error"
         
 def scan_wifi():
     try:
-        raw = subprocess.check_output(['nmcli', '-t', '-f', 'ssid', 'dev', 'wifi'], text=True)
+        raw = subprocess.check_output(['sudo', 'nmcli', '-t', '-f', 'ssid', 'dev', 'wifi'], text=True)
         ssids = list(set([s.strip() for s in raw.split('\n') if s.strip()]))
         ssids.sort()
         if not ssids: return ["Tidak ada WiFi", "Kembali"]
         ssids.append("Kembali")
         return ssids
-    except Exception:
+    except Exception as e:
+        print(f"Error scan_wifi: {e}")
         return ["Gagal Scan", "Kembali"]
 
 def render_info_wifi():
