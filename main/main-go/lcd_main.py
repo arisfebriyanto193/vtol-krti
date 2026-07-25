@@ -140,10 +140,10 @@ except IOError:
 # 4 = Misi Sedang Berjalan
 state = 0
 
-main_menu_items = ["Menu Kalibrasi", "Menu Play"]
+main_menu_items = ["Menu Kalibrasi", "Menu Play", "Info & WiFi"]
 main_menu_idx = 0
 
-kalibrasi_wps = ["wp1", "wp2", "wp3", "wp4", "wp5"]
+kalibrasi_wps = ["wp1", "wp2", "wp3", "wp4", "wp5", "Kembali"]
 kalibrasi_idx = 0
 kalibrasi_msg = ""
 kalibrasi_msg_time = 0
@@ -153,6 +153,15 @@ play_menu_idx = 0
 
 play_wp_items = ["wp1-wp2", "wp2-wp3", "wp3-wp4", "wp4-wp5", "Kembali"]
 play_wp_idx = 0
+
+info_menu_items = ["Pindai WiFi Baru", "Kembali"]
+info_menu_idx = 0
+
+scanned_wifis = []
+wifi_scan_idx = 0
+is_scanning = False
+wifi_msg = ""
+wifi_msg_time = 0
 
 running_mission = None
 
@@ -211,8 +220,12 @@ def render_running():
     display.image(image, rotation=0)
 
 def handle_kalibrasi_save():
-    global kalibrasi_msg, kalibrasi_msg_time
+    global kalibrasi_msg, kalibrasi_msg_time, state
     wp = kalibrasi_wps[kalibrasi_idx]
+    
+    if wp == "Kembali":
+        state = 0
+        return
     
     if not master or (drone_lat == 0.0 and drone_lon == 0.0):
         kalibrasi_msg = "Error: Menunggu data Pixhawk..."
@@ -238,6 +251,79 @@ def handle_kalibrasi_save():
     kalibrasi_msg = f"{wp.upper()} Disimpan!"
     kalibrasi_msg_time = time.time()
 
+def get_ip_address():
+    try:
+        ip = subprocess.check_output(['hostname', '-I'], text=True).strip()
+        return ip if ip else "Tidak ada IP"
+    except Exception:
+        return "Error"
+
+def get_current_wifi():
+    try:
+        wifi = subprocess.check_output(['iwgetid', '-r'], text=True).strip()
+        return wifi if wifi else "Tidak Konek"
+    except Exception:
+        return "Error"
+        
+def scan_wifi():
+    try:
+        raw = subprocess.check_output(['nmcli', '-t', '-f', 'ssid', 'dev', 'wifi'], text=True)
+        ssids = list(set([s.strip() for s in raw.split('\n') if s.strip()]))
+        ssids.sort()
+        if not ssids: return ["Tidak ada WiFi", "Kembali"]
+        ssids.append("Kembali")
+        return ssids
+    except Exception:
+        return ["Gagal Scan", "Kembali"]
+
+def render_info_wifi():
+    draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
+    title = "Info Sistem & WiFi"
+    title_w, _ = get_text_size(title, font_main)
+    draw.text(((WIDTH - title_w) // 2, 5), title, font=font_main, fill=(0, 255, 255))
+    
+    ip_addr = get_ip_address()
+    curr_wifi = get_current_wifi()
+    
+    draw.text((20, 45), f"IP: {ip_addr}", font=font_small, fill=(255, 255, 255))
+    draw.text((20, 70), f"WiFi: {curr_wifi}", font=font_small, fill=(255, 255, 255))
+    
+    start_y = 120
+    for i, item in enumerate(info_menu_items):
+        color = (0, 0, 255) if i == info_menu_idx else (255, 255, 255)
+        prefix = "> " if i == info_menu_idx else "  "
+        draw.text((20, start_y + (i * 30)), prefix + item, font=font_main, fill=color)
+        
+    display.image(image, rotation=0)
+
+def render_wifi_scanner():
+    draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
+    title = "Pilih WiFi Baru"
+    title_w, _ = get_text_size(title, font_main)
+    draw.text(((WIDTH - title_w) // 2, 5), title, font=font_main, fill=(0, 255, 255))
+    
+    if is_scanning:
+        draw.text((20, 100), "Memindai WiFi di sekitar...", font=font_small, fill=(255, 255, 255))
+    else:
+        visible_items = 6
+        start_idx = max(0, wifi_scan_idx - visible_items // 2)
+        end_idx = min(len(scanned_wifis), start_idx + visible_items)
+        if end_idx - start_idx < visible_items:
+            start_idx = max(0, end_idx - visible_items)
+            
+        start_y = 40
+        for i in range(start_idx, end_idx):
+            item = scanned_wifis[i]
+            if len(item) > 20: item = item[:17] + "..."
+            color = (0, 0, 255) if i == wifi_scan_idx else (255, 255, 255)
+            prefix = "> " if i == wifi_scan_idx else "  "
+            draw.text((10, start_y + ((i - start_idx) * 25)), prefix + item, font=font_main, fill=color)
+            
+        if time.time() - wifi_msg_time < 3:
+            draw.text((10, 210), wifi_msg, font=font_small, fill=(0, 255, 255))
+            
+    display.image(image, rotation=0)
+
 def run_mission(script_name):
     global state, running_mission
     running_mission = script_name
@@ -252,6 +338,7 @@ def run_mission(script_name):
     
 def loop_ui():
     global state, main_menu_idx, kalibrasi_idx, play_menu_idx, play_wp_idx
+    global info_menu_idx, wifi_scan_idx, is_scanning, scanned_wifis, wifi_msg, wifi_msg_time
     
     prev_pressed = False
     next_pressed = False
@@ -268,19 +355,27 @@ def loop_ui():
             elif state == 1: kalibrasi_idx = (kalibrasi_idx - 1) % len(kalibrasi_wps)
             elif state == 2: play_menu_idx = (play_menu_idx - 1) % len(play_menu_items)
             elif state == 3: play_wp_idx = (play_wp_idx - 1) % len(play_wp_items)
+            elif state == 5: info_menu_idx = (info_menu_idx - 1) % len(info_menu_items)
+            elif state == 6:
+                if not is_scanning and scanned_wifis:
+                    wifi_scan_idx = (wifi_scan_idx - 1) % len(scanned_wifis)
             
         if btn_n and not next_pressed:
             if state == 0: main_menu_idx = (main_menu_idx + 1) % len(main_menu_items)
             elif state == 1: kalibrasi_idx = (kalibrasi_idx + 1) % len(kalibrasi_wps)
             elif state == 2: play_menu_idx = (play_menu_idx + 1) % len(play_menu_items)
             elif state == 3: play_wp_idx = (play_wp_idx + 1) % len(play_wp_items)
+            elif state == 5: info_menu_idx = (info_menu_idx + 1) % len(info_menu_items)
+            elif state == 6:
+                if not is_scanning and scanned_wifis:
+                    wifi_scan_idx = (wifi_scan_idx + 1) % len(scanned_wifis)
             
         if btn_o and not ok_pressed:
             if state == 0:
                 if main_menu_idx == 0: state = 1
                 elif main_menu_idx == 1: state = 2
+                elif main_menu_idx == 2: state = 5
             elif state == 1:
-                # Save kalibrasi
                 handle_kalibrasi_save()
             elif state == 2:
                 if play_menu_idx == 0:
@@ -295,10 +390,37 @@ def loop_ui():
                 else:
                     script = play_wp_items[play_wp_idx] + ".py"
                     run_mission(script)
+            elif state == 5:
+                if info_menu_idx == 0:
+                    state = 6
+                    is_scanning = True
+                elif info_menu_idx == 1:
+                    state = 0
+            elif state == 6:
+                if not is_scanning and scanned_wifis:
+                    selected = scanned_wifis[wifi_scan_idx]
+                    if selected == "Kembali" or selected == "Tidak ada WiFi" or selected == "Gagal Scan":
+                        state = 5
+                    else:
+                        wifi_msg = f"Connect {selected[:5]}..."
+                        wifi_msg_time = time.time()
+                        render_wifi_scanner() # force render to show message
+                        try:
+                            subprocess.run(['sudo', 'nmcli', 'dev', 'wifi', 'connect', selected], timeout=15)
+                            wifi_msg = "Selesai!"
+                        except Exception:
+                            wifi_msg = "Gagal koneksi!"
+                        wifi_msg_time = time.time()
 
         prev_pressed = btn_p
         next_pressed = btn_n
         ok_pressed = btn_o
+
+        if state == 6 and is_scanning:
+            render_wifi_scanner()
+            scanned_wifis = scan_wifi()
+            wifi_scan_idx = 0
+            is_scanning = False
 
         # Render
         if state == 0: render_menu("Main Menu", main_menu_items, main_menu_idx)
@@ -306,6 +428,8 @@ def loop_ui():
         elif state == 2: render_menu("Menu Play", play_menu_items, play_menu_idx)
         elif state == 3: render_menu("Pilih WP", play_wp_items, play_wp_idx)
         elif state == 4: render_running()
+        elif state == 5: render_info_wifi()
+        elif state == 6 and not is_scanning: render_wifi_scanner()
 
         time.sleep(0.1)
 
