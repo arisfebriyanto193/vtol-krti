@@ -140,8 +140,11 @@ except IOError:
 # 4 = Misi Sedang Berjalan
 state = 0
 
-main_menu_items = ["Menu Kalibrasi", "Menu Play", "Info & WiFi"]
+main_menu_items = ["Menu Kalibrasi", "Menu Play", "Ganti Tim", "Info & WiFi"]
 main_menu_idx = 0
+
+team_menu_items = ["Biru", "Merah", "Kembali"]
+team_menu_idx = 0
 
 kalibrasi_wps = ["wp1", "wp2", "wp3", "wp4", "wp5", "Kembali"]
 kalibrasi_idx = 0
@@ -187,7 +190,8 @@ def render_kalibrasi():
     draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
     
     wp_name = kalibrasi_wps[kalibrasi_idx]
-    title = f"Kalibrasi: {wp_name.upper()}"
+    team = config_data.get('team', 'Biru')
+    title = f"Kalib ({team}): {wp_name.upper()}"
     title_w, _ = get_text_size(title, font_main)
     draw.text(((WIDTH - title_w) // 2, 5), title, font=font_main, fill=(0, 255, 255))
     
@@ -327,6 +331,23 @@ def render_wifi_scanner():
             
     display.image(image, rotation=0)
 
+def render_team():
+    draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
+    title = "Ganti Tim Aktif"
+    title_w, _ = get_text_size(title, font_main)
+    draw.text(((WIDTH - title_w) // 2, 10), title, font=font_main, fill=(0, 255, 255))
+    
+    current_team = config_data.get('team', 'Biru')
+    draw.text((20, 50), f"Tim Saat Ini: {current_team}", font=font_small, fill=(0, 255, 0))
+    
+    start_y = 100
+    for i, item in enumerate(team_menu_items):
+        color = (0, 0, 255) if i == team_menu_idx else (255, 255, 255)
+        prefix = "> " if i == team_menu_idx else "  "
+        draw.text((20, start_y + (i * 30)), prefix + item, font=font_main, fill=color)
+        
+    display.image(image, rotation=0)
+
 def run_mission(script_name):
     global state, running_mission
     running_mission = script_name
@@ -342,6 +363,7 @@ def run_mission(script_name):
 def loop_ui():
     global state, main_menu_idx, kalibrasi_idx, play_menu_idx, play_wp_idx
     global info_menu_idx, wifi_scan_idx, is_scanning, scanned_wifis, wifi_msg, wifi_msg_time
+    global team_menu_idx
     
     prev_pressed = False
     next_pressed = False
@@ -362,6 +384,7 @@ def loop_ui():
             elif state == 6:
                 if not is_scanning and scanned_wifis:
                     wifi_scan_idx = (wifi_scan_idx - 1) % len(scanned_wifis)
+            elif state == 7: team_menu_idx = (team_menu_idx - 1) % len(team_menu_items)
             
         if btn_n and not next_pressed:
             if state == 0: main_menu_idx = (main_menu_idx + 1) % len(main_menu_items)
@@ -372,12 +395,14 @@ def loop_ui():
             elif state == 6:
                 if not is_scanning and scanned_wifis:
                     wifi_scan_idx = (wifi_scan_idx + 1) % len(scanned_wifis)
+            elif state == 7: team_menu_idx = (team_menu_idx + 1) % len(team_menu_items)
             
         if btn_o and not ok_pressed:
             if state == 0:
                 if main_menu_idx == 0: state = 1
                 elif main_menu_idx == 1: state = 2
-                elif main_menu_idx == 2: state = 5
+                elif main_menu_idx == 2: state = 7
+                elif main_menu_idx == 3: state = 5
             elif state == 1:
                 handle_kalibrasi_save()
             elif state == 2:
@@ -414,6 +439,17 @@ def loop_ui():
                         except Exception:
                             wifi_msg = "Gagal koneksi!"
                         wifi_msg_time = time.time()
+            elif state == 7:
+                if team_menu_idx == 0:
+                    config_data['team'] = 'Biru'
+                    save_config()
+                    state = 0
+                elif team_menu_idx == 1:
+                    config_data['team'] = 'Merah'
+                    save_config()
+                    state = 0
+                elif team_menu_idx == 2:
+                    state = 0
 
         prev_pressed = btn_p
         next_pressed = btn_n
@@ -433,6 +469,7 @@ def loop_ui():
         elif state == 4: render_running()
         elif state == 5: render_info_wifi()
         elif state == 6 and not is_scanning: render_wifi_scanner()
+        elif state == 7: render_team()
 
         time.sleep(0.1)
 
