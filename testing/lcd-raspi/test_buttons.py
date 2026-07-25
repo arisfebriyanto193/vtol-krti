@@ -1,4 +1,5 @@
 import time
+import datetime
 import board
 import digitalio
 
@@ -31,13 +32,16 @@ try:
         curr_state_ok = btn_ok.value
 
         if not curr_state_prev and prev_state_prev:
-            print("✅ Tombol PREV (D17) Ditekan!")
+            now = datetime.datetime.now().strftime("%H:%M:%S")
+            print(f"[{now}] ✅ Tombol PREV (D17) Ditekan!")
         
         if not curr_state_next and prev_state_next:
-            print("✅ Tombol NEXT (D27) Ditekan!")
+            now = datetime.datetime.now().strftime("%H:%M:%S")
+            print(f"[{now}] ✅ Tombol NEXT (D27) Ditekan!")
             
         if not curr_state_ok and prev_state_ok:
-            print("✅ Tombol OK (D22) Ditekan!")
+            now = datetime.datetime.now().strftime("%H:%M:%S")
+            print(f"[{now}] ✅ Tombol OK (D22) Ditekan!")
 
         prev_state_prev = curr_state_prev
         prev_state_next = curr_state_next
