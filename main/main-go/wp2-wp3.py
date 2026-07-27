@@ -273,7 +273,7 @@ def main():
                     if cur_lat and cur_lon:
                         dist = calculate_distance(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
                         
-                        arrival_dist = 2.0 if use_aruco else 0.5
+                        arrival_dist = 2.0 if use_aruco else 0.3
                         if dist < arrival_dist:
                             if use_aruco:
                                 log_msg(f"Mendekati WP3 (Jarak: {dist:.1f}m). Beralih ke STATE_CENTER_ARUCO.", "ACTION")
