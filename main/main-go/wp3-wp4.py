@@ -246,20 +246,21 @@ def main():
                     cur_alt = drone_telemetry['alt']
                     alt_diff = abs(cur_alt - target_alt)
                     yaw_diff = get_shortest_yaw_diff(cur_yaw, wp_target['yaw']) if cur_yaw else 999
-                    yaw_ok = yaw_diff < 5.0
+                    yaw_ok = yaw_diff < 10.0  # Toleransi 10 derajat
                     alt_ok = alt_diff < 0.3
                     if not yaw_ok and time.time() - last_yaw_cmd_time > 2.0:
                         log_msg(f"Re-send Yaw di WAIT_ALT: Cur={cur_yaw:.1f}, Target={wp_target['yaw']:.1f}, Diff={yaw_diff:.1f}", "ACTION")
                         rotate_to_yaw(master, wp_target['yaw'])
                         last_yaw_cmd_time = time.time()
                     if cur_lat and cur_lon and time.time() - last_gps_cmd_time > 1.0:
-                        goto_gps_position(master, cur_lat, cur_lon, target_alt, 0.5)
+                        goto_gps_position(master, cur_lat, cur_lon, target_alt)
                         last_gps_cmd_time = time.time()
                     if yaw_ok and alt_ok:
                         if alt_stable_start == 0:
                             alt_stable_start = time.time()
                         elif time.time() - alt_stable_start > 1.5:
                             log_msg(f"Yaw & Alt stabil (Yaw={cur_yaw:.1f}°, Alt={cur_alt:.2f}m). Mulai maju ke WP4!", "ACTION")
+                            send_change_speed(master, drone_speed)
                             state = STATE_GOTO_GPS
                             last_gps_cmd_time = 0
                     else:
