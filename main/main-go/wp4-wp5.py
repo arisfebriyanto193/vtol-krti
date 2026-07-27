@@ -236,11 +236,16 @@ def main():
                             rotate_to_yaw(master, wp_target['yaw'])
 
                 elif state == STATE_WAIT_ALT:
-                    state_str = "MENUNGGU KETINGGIAN STABIL"
+                    state_str = "MENUNGGU YAW & ALT STABIL"
                     cur_alt = drone_telemetry['alt']
                     alt_diff = abs(cur_alt - target_alt)
-                    yaw_ok = get_shortest_yaw_diff(cur_yaw, wp_target['yaw']) < 5.0 if cur_yaw else False
+                    yaw_diff = get_shortest_yaw_diff(cur_yaw, wp_target['yaw']) if cur_yaw else 999
+                    yaw_ok = yaw_diff < 5.0
                     alt_ok = alt_diff < 0.3
+                    if not yaw_ok and time.time() - last_yaw_cmd_time > 2.0:
+                        log_msg(f"Re-send Yaw di WAIT_ALT: Cur={cur_yaw:.1f}, Target={wp_target['yaw']:.1f}, Diff={yaw_diff:.1f}", "ACTION")
+                        rotate_to_yaw(master, wp_target['yaw'])
+                        last_yaw_cmd_time = time.time()
                     if cur_lat and cur_lon and time.time() - last_gps_cmd_time > 1.0:
                         goto_gps_position(master, cur_lat, cur_lon, target_alt, 0.5)
                         last_gps_cmd_time = time.time()
@@ -248,12 +253,13 @@ def main():
                         if alt_stable_start == 0:
                             alt_stable_start = time.time()
                         elif time.time() - alt_stable_start > 1.5:
-                            log_msg(f"Yaw & Alt stabil (Alt={cur_alt:.2f}m, diff={alt_diff:.2f}m). Mulai maju ke WP5!", "ACTION")
+                            log_msg(f"Yaw & Alt stabil (Yaw={cur_yaw:.1f}°, Alt={cur_alt:.2f}m). Mulai maju ke WP5!", "ACTION")
                             state = STATE_GOTO_GPS
                             last_gps_cmd_time = 0
                     else:
                         alt_stable_start = 0
-                        log_msg(f"Menunggu: YawOK={yaw_ok} AltOK={alt_ok} (cur={cur_alt:.2f}m tgt={target_alt:.1f}m)", "WAIT")
+                        if time.time() - last_log_time > 0.9:
+                            log_msg(f"Menunggu: YawOK={yaw_ok}({yaw_diff:.1f}deg) AltOK={alt_ok}(cur={cur_alt:.2f}m tgt={target_alt:.1f}m)", "WAIT")
 
                 elif state == STATE_GOTO_GPS:
                     state_str = "NAVIGASI MAJU (GPS) -> WP5"
