@@ -221,7 +221,7 @@ def main():
                 if state == STATE_INIT:
                     log_msg(f"Mode GUIDED aktif. Naik ke {target_alt}m & ROTASI YAW ke target {wp_target['yaw']:.1f} deg.", "ACTION")
                     if cur_lat and cur_lon:
-                        goto_gps_position(master, cur_lat, cur_lon, target_alt, 0.5)
+                        goto_gps_position(master, cur_lat, cur_lon, target_alt)
                     rotate_to_yaw(master, wp_target['yaw'])
                     last_yaw_cmd_time = time.time()
                     state = STATE_ROTATE_YAW
