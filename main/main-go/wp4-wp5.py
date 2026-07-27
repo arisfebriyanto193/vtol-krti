@@ -29,10 +29,11 @@ ARUCO_DICT_TYPE = cv2.aruco.DICT_7X7_50
 
 STATE_INIT = 0
 STATE_ROTATE_YAW = 1
-STATE_GOTO_GPS = 2
-STATE_CENTER_ARUCO = 3
-STATE_LAND = 4
-STATE_DONE = 5
+STATE_WAIT_ALT = 2   # Tunggu ketinggian stabil setelah yaw selesai
+STATE_GOTO_GPS = 3
+STATE_CENTER_ARUCO = 4
+STATE_LAND = 5
+STATE_DONE = 6
 
 def load_config():
     if os.path.exists(CONFIG_PATH):
@@ -90,13 +91,14 @@ def send_velocity(master, vx, vy, vz):
         0b0000111111000111, 0, 0, 0, vx, vy, vz, 0, 0, 0, 0, 0
     )
 
-def goto_gps_position(master, lat, lon, alt):
+def goto_gps_position(master, lat, lon, alt, speed=1.5):
+    """Kirim target posisi GPS dengan kecepatan dari config."""
     if master is None: return
     master.mav.set_position_target_global_int_send(
         0, master.target_system, master.target_component,
         mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-        0b0000111111111000, int(lat * 1e7), int(lon * 1e7), alt,
-        0, 0, 0, 0, 0, 0, 0, 0
+        0b0000101111111000, int(lat * 1e7), int(lon * 1e7), alt,
+        speed, speed, 0, 0, 0, 0, 0, 0
     )
 
 def rotate_to_yaw(master, target_yaw):
@@ -144,6 +146,7 @@ def main():
     baud = config.get('pixhawk_baudrate', 115200)
     cam_index = config.get('camera_index', 0)
     target_alt = config.get('target_altitude', 2.0)
+    drone_speed = config.get('drone_speed', 1.5)
     use_aruco = config.get('use_aruco_verification', True)
     
     team = config.get('team', 'Biru')
@@ -174,6 +177,7 @@ def main():
 
     state = STATE_INIT
     stable_start_time = 0
+    alt_stable_start = 0
     cur_lat, cur_lon, cur_yaw = None, None, None
 
     last_log_time = 0
@@ -223,10 +227,28 @@ def main():
                         diff = get_shortest_yaw_diff(cur_yaw, wp_target['yaw'])
                         cv2.putText(display_frame, f"Yaw Diff: {diff:.1f} deg", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                         if diff < 5.0:
-                            print("✅ Rotasi selesai. Maju ke GPS WP5...")
-                            state = STATE_GOTO_GPS
+                            log_msg(f"Rotasi SELESAI (selisih {diff:.1f} deg). Menunggu ketinggian stabil...", "ACTION")
+                            state = STATE_WAIT_ALT
+                            alt_stable_start = 0
                         else:
                             rotate_to_yaw(master, wp_target['yaw'])
+
+                elif state == STATE_WAIT_ALT:
+                    state_str = "MENUNGGU KETINGGIAN STABIL"
+                    cur_alt = drone_telemetry['alt']
+                    alt_diff = abs(cur_alt - target_alt)
+                    yaw_ok = get_shortest_yaw_diff(cur_yaw, wp_target['yaw']) < 5.0 if cur_yaw else False
+                    alt_ok = alt_diff < 0.3
+                    if yaw_ok and alt_ok:
+                        if alt_stable_start == 0:
+                            alt_stable_start = time.time()
+                        elif time.time() - alt_stable_start > 1.5:
+                            log_msg(f"Yaw & Alt stabil (Alt={cur_alt:.2f}m, diff={alt_diff:.2f}m). Mulai maju ke WP5!", "ACTION")
+                            state = STATE_GOTO_GPS
+                            last_gps_cmd_time = 0
+                    else:
+                        alt_stable_start = 0
+                        log_msg(f"Menunggu: YawOK={yaw_ok} AltOK={alt_ok} (cur={cur_alt:.2f}m tgt={target_alt:.1f}m)", "WAIT")
 
                 elif state == STATE_GOTO_GPS:
                     state_str = "NAVIGASI MAJU (GPS) -> WP5"
@@ -235,13 +257,14 @@ def main():
                         cv2.putText(display_frame, f"Dist WP5: {dist:.1f} m", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                         if dist < 2.0:
                             if use_aruco:
-                                print("✅ Mendekati WP5. Beralih ke pencarian ArUco!")
+                                log_msg("Mendekati WP5. Beralih ke pencarian ArUco!", "ACTION")
                                 state = STATE_CENTER_ARUCO
                             else:
-                                print("✅ Mendekati WP5. Verifikasi ArUco DINONAKTIFKAN. LANGSUNG LANDING...")
+                                log_msg("Mendekati WP5. Verifikasi ArUco DINONAKTIFKAN. LANGSUNG LANDING...", "ACTION")
                                 state = STATE_LAND
                         else:
-                            goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
+                            log_msg(f"Mengirim GPS target. Jarak sisa: {dist:.1f}m | Kecepatan: {drone_speed}m/s", "NAV")
+                            goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt, drone_speed)
 
                 elif state == STATE_CENTER_ARUCO:
                     state_str = "VISUAL CENTERING WP5"
