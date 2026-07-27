@@ -167,6 +167,9 @@ wifi_msg = ""
 wifi_msg_time = 0
 
 running_mission = None
+running_process = None
+mission_finished = False
+mission_finish_time = 0
 
 def get_text_size(text, font):
     left, top, right, bottom = font.getbbox(text)
@@ -215,12 +218,22 @@ def render_kalibrasi():
 
 def render_running():
     draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
-    title = "Misi Sedang Berjalan"
-    title_w, _ = get_text_size(title, font_main)
-    draw.text(((WIDTH - title_w) // 2, 50), title, font=font_main, fill=(0, 255, 255))
-    
-    draw.text((20, 100), f"Script: {running_mission}", font=font_small, fill=(255, 255, 255))
-    draw.text((20, 180), "Misi ini berjalan di background.", font=font_small, fill=(200, 200, 200))
+    if not mission_finished:
+        title = "Sedang Berjalan"
+        title_w, _ = get_text_size(title, font_main)
+        draw.text(((WIDTH - title_w) // 2, 50), title, font=font_main, fill=(0, 255, 255))
+        
+        draw.text((20, 100), f"Script: {running_mission}", font=font_small, fill=(255, 255, 255))
+        draw.text((20, 140), "Menjalankan WP...", font=font_small, fill=(0, 255, 0))
+        draw.text((20, 200), "[OK] untuk Batal", font=font_small, fill=(255, 100, 100))
+    else:
+        title = "Misi Selesai"
+        title_w, _ = get_text_size(title, font_main)
+        draw.text(((WIDTH - title_w) // 2, 50), title, font=font_main, fill=(0, 255, 0))
+        
+        draw.text((20, 100), f"Script: {running_mission}", font=font_small, fill=(255, 255, 255))
+        draw.text((20, 140), "Selesai dijalankan!", font=font_small, fill=(0, 255, 0))
+        
     display.image(image, rotation=0)
 
 def handle_kalibrasi_save():
@@ -349,21 +362,19 @@ def render_team():
     display.image(image, rotation=0)
 
 def run_mission(script_name):
-    global state, running_mission
+    global state, running_mission, running_process, mission_finished
     running_mission = script_name
+    mission_finished = False
     state = 4
     script_path = os.path.join(BASE_DIR, script_name)
     print(f"Menjalankan misi: {script_path}")
     # Run independent process
-    subprocess.Popen(["python", script_path])
-    time.sleep(3) # Tampilkan tulisan berjalan sebentar
-    # Kembali ke menu utama
-    state = 0
+    running_process = subprocess.Popen(["python", script_path])
     
 def loop_ui():
     global state, main_menu_idx, kalibrasi_idx, play_menu_idx, play_wp_idx
     global info_menu_idx, wifi_scan_idx, is_scanning, scanned_wifis, wifi_msg, wifi_msg_time
-    global team_menu_idx
+    global team_menu_idx, running_process, mission_finished, mission_finish_time
     
     prev_pressed = False
     next_pressed = False
@@ -418,6 +429,12 @@ def loop_ui():
                 else:
                     script = play_wp_items[play_wp_idx] + ".py"
                     run_mission(script)
+            elif state == 4:
+                if not mission_finished:
+                    if running_process:
+                        running_process.terminate()
+                    mission_finished = True
+                    mission_finish_time = time.time()
             elif state == 5:
                 if info_menu_idx == 0:
                     state = 6
@@ -460,6 +477,15 @@ def loop_ui():
             scanned_wifis = scan_wifi()
             wifi_scan_idx = 0
             is_scanning = False
+
+        if state == 4 and not mission_finished:
+            if running_process and running_process.poll() is not None:
+                mission_finished = True
+                mission_finish_time = time.time()
+                
+        if state == 4 and mission_finished:
+            if time.time() - mission_finish_time > 3:
+                state = 0
 
         # Render
         if state == 0: render_menu("Main Menu", main_menu_items, main_menu_idx)
