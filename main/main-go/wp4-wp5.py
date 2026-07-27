@@ -91,14 +91,23 @@ def send_velocity(master, vx, vy, vz):
         0b0000111111000111, 0, 0, 0, vx, vy, vz, 0, 0, 0, 0, 0
     )
 
-def goto_gps_position(master, lat, lon, alt, speed=1.5):
-    """Kirim target posisi GPS dengan kecepatan dari config."""
+def goto_gps_position(master, lat, lon, alt):
+    """Kirim target posisi GPS. Kecepatan diatur via send_change_speed()."""
     if master is None: return
     master.mav.set_position_target_global_int_send(
         0, master.target_system, master.target_component,
         mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-        0b0000101111111000, int(lat * 1e7), int(lon * 1e7), alt,
-        speed, speed, 0, 0, 0, 0, 0, 0
+        0b0000111111111000, int(lat * 1e7), int(lon * 1e7), alt,
+        0, 0, 0, 0, 0, 0, 0, 0
+    )
+
+def send_change_speed(master, speed_ms):
+    """Set kecepatan navigasi drone via MAV_CMD_DO_CHANGE_SPEED."""
+    if master is None: return
+    master.mav.command_long_send(
+        master.target_system, master.target_component,
+        mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED, 0,
+        1, speed_ms, -1, 0, 0, 0, 0
     )
 
 def rotate_to_yaw(master, target_yaw):
@@ -228,7 +237,7 @@ def main():
                     if cur_yaw is not None:
                         diff = get_shortest_yaw_diff(cur_yaw, wp_target['yaw'])
                         cv2.putText(display_frame, f"Yaw Diff: {diff:.1f} deg", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-                        if diff < 5.0:
+                        if diff < 10.0:
                             log_msg(f"Rotasi SELESAI (selisih {diff:.1f} deg). Menunggu ketinggian stabil...", "ACTION")
                             state = STATE_WAIT_ALT
                             alt_stable_start = 0
@@ -275,7 +284,7 @@ def main():
                                 state = STATE_LAND
                         else:
                             log_msg(f"Mengirim GPS target. Jarak sisa: {dist:.1f}m | Kecepatan: {drone_speed}m/s", "NAV")
-                            goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt, drone_speed)
+                            goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
 
                 elif state == STATE_CENTER_ARUCO:
                     state_str = "VISUAL CENTERING WP5"

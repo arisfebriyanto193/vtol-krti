@@ -31,7 +31,7 @@ ARUCO_DICT_TYPE = cv2.aruco.DICT_7X7_50
 # States
 STATE_INIT = 0
 STATE_ROTATE_YAW = 1
-STATE_WAIT_ALT = 2   # Tunggu ketinggian stabil setelah yaw selesai
+STATE_WAIT_ALT = 1   # Tunggu ketinggian stabil setelah yaw selesai
 STATE_GOTO_GPS = 3
 STATE_CENTER_ARUCO = 4
 STATE_DONE = 5
@@ -94,20 +94,28 @@ def send_velocity(master, vx, vy, vz):
         0, 0, 0, vx, vy, vz, 0, 0, 0, 0, 0
     )
 
-def goto_gps_position(master, lat, lon, alt, speed=1.5):
-    """Kirim target posisi GPS dengan kecepatan dari config."""
+def goto_gps_position(master, lat, lon, alt):
+    """Kirim target posisi GPS. Kecepatan diatur via send_change_speed()."""
     if master is None: return
-    # type_mask: aktifkan posisi (X,Y,Z) + kecepatan (Vx,Vy), abaikan akselerasi & yaw
-    # 0b0000101111111000 = aktifkan pos + speed horizontal
     master.mav.set_position_target_global_int_send(
         0, master.target_system, master.target_component,
         mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-        0b0000101111111000,
+        0b0000111111111000,  # Hanya posisi, abaikan velocity/yaw
         int(lat * 1e7),
         int(lon * 1e7),
         alt,
-        speed, speed, 0,  # vx, vy sebagai batas kecepatan
-        0, 0, 0, 0, 0
+        0, 0, 0, 0, 0, 0, 0, 0
+    )
+
+def send_change_speed(master, speed_ms):
+    """Set kecepatan navigasi drone via MAV_CMD_DO_CHANGE_SPEED."""
+    if master is None: return
+    master.mav.command_long_send(
+        master.target_system, master.target_component,
+        mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED, 0,
+        1,        # param1: 1 = ground speed
+        speed_ms, # param2: kecepatan dalam m/s
+        -1, 0, 0, 0, 0
     )
 
 def rotate_to_yaw(master, target_yaw):
@@ -243,7 +251,7 @@ def main():
                     if cur_yaw is not None:
                         diff = get_shortest_yaw_diff(cur_yaw, wp_target['yaw'])
                         
-                        if diff < 5.0: # Toleransi 5 derajat
+                        if diff < 10.0: # Toleransi 10 derajat (lebih realistis)
                             log_msg(f"Rotasi SELESAI (selisih {diff:.1f} deg). Menunggu ketinggian stabil...", "ACTION")
                             state = STATE_WAIT_ALT
                             alt_stable_start = 0
@@ -259,22 +267,23 @@ def main():
                     cur_alt = drone_telemetry['alt']
                     alt_diff = abs(cur_alt - target_alt)
                     yaw_diff = get_shortest_yaw_diff(cur_yaw, wp_target['yaw']) if cur_yaw else 999
-                    yaw_ok = yaw_diff < 5.0
+                    yaw_ok = yaw_diff < 10.0  # Toleransi 10 derajat
                     alt_ok = alt_diff < 0.3
-                    # Re-send yaw jika belum tercapai
+                    # Re-send yaw jika belum tercapai (pakai goto_gps position saja untuk hover, TANPA yaw override)
                     if not yaw_ok and time.time() - last_yaw_cmd_time > 2.0:
                         log_msg(f"Re-send Yaw di WAIT_ALT: Cur={cur_yaw:.1f}, Target={wp_target['yaw']:.1f}, Diff={yaw_diff:.1f}", "ACTION")
                         rotate_to_yaw(master, wp_target['yaw'])
                         last_yaw_cmd_time = time.time()
-                    # Hover di posisi saat ini + naik ke target alt
+                    # Hover di posisi saat ini + naik ke target alt (bitmask tidak override yaw)
                     if cur_lat and cur_lon and time.time() - last_gps_cmd_time > 1.0:
-                        goto_gps_position(master, cur_lat, cur_lon, target_alt, 0.5)
+                        goto_gps_position(master, cur_lat, cur_lon, target_alt)
                         last_gps_cmd_time = time.time()
                     if yaw_ok and alt_ok:
                         if alt_stable_start == 0:
                             alt_stable_start = time.time()
                         elif time.time() - alt_stable_start > 1.5:
                             log_msg(f"Yaw & Alt stabil (Yaw={cur_yaw:.1f}°, Alt={cur_alt:.2f}m). Mulai maju ke WP2!", "ACTION")
+                            send_change_speed(master, drone_speed)  # Set kecepatan sebelum maju
                             state = STATE_GOTO_GPS
                             last_gps_cmd_time = 0
                     else:
@@ -297,7 +306,7 @@ def main():
                         else:
                             if time.time() - last_gps_cmd_time > 0.5:
                                 log_msg(f"Mengirim GPS target. Jarak sisa: {dist:.1f}m | Kecepatan: {drone_speed}m/s", "NAV")
-                                goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt, drone_speed)
+                                goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
                                 last_gps_cmd_time = time.time()
 
                 elif state == STATE_CENTER_ARUCO:
