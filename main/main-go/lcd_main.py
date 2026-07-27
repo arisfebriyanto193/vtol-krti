@@ -50,26 +50,39 @@ if config_data.get('esp32_port'):
         print(f"Gagal konek ESP32: {e}")
 
 def pixhawk_loop():
-    global master, drone_lat, drone_lon, drone_alt_px, drone_yaw
+    global master, drone_lat, drone_lon, drone_alt_px, drone_yaw, state
     port = config_data.get('pixhawk_port')
     baud = config_data.get('pixhawk_baudrate', 115200)
     if not port:
         return
-    try:
-        print(f"Menghubungkan ke Pixhawk di {port}...")
-        master = mavutil.mavlink_connection(port, baud=baud)
-        master.wait_heartbeat(timeout=3)
-        master.mav.request_data_stream_send(
-            master.target_system, master.target_component,
-            mavutil.mavlink.MAV_DATA_STREAM_ALL, 4, 1
-        )
-        print("✅ Terhubung ke Pixhawk")
-    except Exception as e:
-        print(f"❌ Gagal koneksi Pixhawk: {e}")
-        master = None
-        return
 
     while True:
+        if state == 4:
+            if master is not None:
+                try:
+                    master.close()
+                except Exception:
+                    pass
+                master = None
+                print("⏸️ Port serial dilepas sementara untuk misi berjalan.")
+            time.sleep(1)
+            continue
+            
+        if master is None:
+            try:
+                print(f"Menghubungkan ke Pixhawk di {port}...")
+                master = mavutil.mavlink_connection(port, baud=baud)
+                master.wait_heartbeat(timeout=3)
+                master.mav.request_data_stream_send(
+                    master.target_system, master.target_component,
+                    mavutil.mavlink.MAV_DATA_STREAM_ALL, 4, 1
+                )
+                print("✅ Terhubung ke Pixhawk")
+            except Exception:
+                master = None
+                time.sleep(2)
+                continue
+
         try:
             msg = master.recv_match(blocking=True, timeout=1.0)
             if msg:
@@ -361,15 +374,20 @@ def render_team():
         
     display.image(image, rotation=0)
 
+def _start_process_delayed(script_path):
+    global running_process
+    time.sleep(1.5) # Beri waktu agar koneksi serial dilepas oleh pixhawk_loop
+    running_process = subprocess.Popen(["python", script_path])
+
 def run_mission(script_name):
     global state, running_mission, running_process, mission_finished
     running_mission = script_name
     mission_finished = False
     state = 4
     script_path = os.path.join(BASE_DIR, script_name)
-    print(f"Menjalankan misi: {script_path}")
-    # Run independent process
-    running_process = subprocess.Popen(["python", script_path])
+    print(f"Menyiapkan misi: {script_path}")
+    # Run independent process with delay so serial port can be closed
+    threading.Thread(target=_start_process_delayed, args=(script_path,), daemon=True).start()
     
 def loop_ui():
     global state, main_menu_idx, kalibrasi_idx, play_menu_idx, play_wp_idx
