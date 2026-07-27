@@ -275,12 +275,14 @@ def main():
                     if cur_lat and cur_lon:
                         dist = calculate_distance(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
                         cv2.putText(display_frame, f"Dist WP5: {dist:.1f} m", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-                        if dist < 2.0:
+                        
+                        arrival_dist = 2.0 if use_aruco else 0.5
+                        if dist < arrival_dist:
                             if use_aruco:
-                                log_msg("Mendekati WP5. Beralih ke pencarian ArUco!", "ACTION")
+                                log_msg(f"Mendekati WP5 (Jarak: {dist:.1f}m). Beralih ke pencarian ArUco!", "ACTION")
                                 state = STATE_CENTER_ARUCO
                             else:
-                                log_msg("Mendekati WP5. Verifikasi ArUco DINONAKTIFKAN. LANGSUNG LANDING...", "ACTION")
+                                log_msg(f"Tiba di WP5 (Jarak: {dist:.1f}m). ArUco DINONAKTIFKAN. LANGSUNG LANDING...", "ACTION")
                                 state = STATE_LAND
                         else:
                             log_msg(f"Mengirim GPS target. Jarak sisa: {dist:.1f}m | Kecepatan: {drone_speed}m/s", "NAV")

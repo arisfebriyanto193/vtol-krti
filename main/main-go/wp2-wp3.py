@@ -273,12 +273,13 @@ def main():
                     if cur_lat and cur_lon:
                         dist = calculate_distance(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
                         
-                        if dist < 2.0:
+                        arrival_dist = 2.0 if use_aruco else 0.5
+                        if dist < arrival_dist:
                             if use_aruco:
                                 log_msg(f"Mendekati WP3 (Jarak: {dist:.1f}m). Beralih ke STATE_CENTER_ARUCO.", "ACTION")
                                 state = STATE_CENTER_ARUCO
                             else:
-                                log_msg(f"Mendekati WP3 (Jarak: {dist:.1f}m). ArUco NONAKTIF. SELESAI SEGMEN.", "ACTION")
+                                log_msg(f"Tiba di WP3 (Jarak: {dist:.1f}m). ArUco NONAKTIF. SELESAI SEGMEN.", "ACTION")
                                 state = STATE_DONE
                         else:
                             if time.time() - last_gps_cmd_time > 0.5:
