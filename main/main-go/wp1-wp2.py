@@ -230,7 +230,10 @@ def main():
                 last_gps_cmd_time = 0
             else:
                 if state == STATE_INIT:
-                    log_msg(f"Mode GUIDED aktif. Mengirim perintah ROTASI YAW ke target {wp_target['yaw']:.1f} deg.", "ACTION")
+                    log_msg(f"Mode GUIDED aktif. Naik ke {target_alt}m & ROTASI YAW ke target {wp_target['yaw']:.1f} deg.", "ACTION")
+                    # Kirim perintah naik ke target altitude sekaligus
+                    if cur_lat and cur_lon:
+                        goto_gps_position(master, cur_lat, cur_lon, target_alt, 0.5)
                     rotate_to_yaw(master, wp_target['yaw'])
                     last_yaw_cmd_time = time.time()
                     state = STATE_ROTATE_YAW
@@ -258,6 +261,10 @@ def main():
                     # Cek apakah yaw masih oke dan altitude sudah dalam toleransi 0.3m
                     yaw_ok = get_shortest_yaw_diff(cur_yaw, wp_target['yaw']) < 5.0 if cur_yaw else False
                     alt_ok = alt_diff < 0.3
+                    # Terus kirim perintah hover di posisi saat ini + naik ke target alt
+                    if cur_lat and cur_lon and time.time() - last_gps_cmd_time > 1.0:
+                        goto_gps_position(master, cur_lat, cur_lon, target_alt, 0.5)
+                        last_gps_cmd_time = time.time()
                     if yaw_ok and alt_ok:
                         if alt_stable_start == 0:
                             alt_stable_start = time.time()

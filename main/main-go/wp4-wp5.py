@@ -217,7 +217,9 @@ def main():
                 state = STATE_INIT
             else:
                 if state == STATE_INIT:
-                    print("✅ Mode GUIDED aktif. Memulai ROTASI YAW ke WP5.")
+                    log_msg(f"Mode GUIDED aktif. Naik ke {target_alt}m & ROTASI YAW ke target {wp_target['yaw']:.1f} deg.", "ACTION")
+                    if cur_lat and cur_lon:
+                        goto_gps_position(master, cur_lat, cur_lon, target_alt, 0.5)
                     rotate_to_yaw(master, wp_target['yaw'])
                     state = STATE_ROTATE_YAW
 
@@ -239,6 +241,9 @@ def main():
                     alt_diff = abs(cur_alt - target_alt)
                     yaw_ok = get_shortest_yaw_diff(cur_yaw, wp_target['yaw']) < 5.0 if cur_yaw else False
                     alt_ok = alt_diff < 0.3
+                    if cur_lat and cur_lon and time.time() - last_gps_cmd_time > 1.0:
+                        goto_gps_position(master, cur_lat, cur_lon, target_alt, 0.5)
+                        last_gps_cmd_time = time.time()
                     if yaw_ok and alt_ok:
                         if alt_stable_start == 0:
                             alt_stable_start = time.time()
