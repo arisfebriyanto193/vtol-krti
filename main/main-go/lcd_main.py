@@ -27,6 +27,11 @@ drone_lon = 0.0
 drone_alt_px = 0.0
 drone_yaw = 0.0
 
+# State Machine UI (dideklarasikan di sini agar tersedia sebelum thread dimulai)
+# 0 = Main Menu, 1 = Kalibrasi, 2 = Play Menu, 3 = Play per WP, 4 = Misi Berjalan
+# 5 = Info & WiFi, 6 = WiFi Scanner, 7 = Ganti Tim
+state = 0
+
 def load_config():
     global config_data
     if os.path.exists(CONFIG_PATH):
@@ -145,13 +150,7 @@ except IOError:
     font_main = ImageFont.load_default()
     font_small = ImageFont.load_default()
 
-# State Machine UI
-# 0 = Main Menu
-# 1 = Kalibrasi Menu
-# 2 = Play Menu
-# 3 = Play per WP Menu
-# 4 = Misi Sedang Berjalan
-state = 0
+# State Machine UI (lihat deklarasi state di bagian atas file)
 
 main_menu_items = ["Menu Kalibrasi", "Menu Play", "Ganti Tim", "Info & WiFi"]
 main_menu_idx = 0
