@@ -15,7 +15,6 @@ import numpy as np
 import threading
 import math
 from pymavlink import mavutil
-import web_dashboard_mission
 from sensor_reader import ESP32Reader
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -181,7 +180,6 @@ def main():
     print(f"🎯 Target WP1: Lat {wp_target['lat']}, Lon {wp_target['lon']}, Yaw {wp_target['yaw']}")
 
     # Mulai Web Dashboard
-    web_dashboard_mission.start_dashboard(team, port=5000)
 
     # Inisialisasi ESP32 Sensor Reader
     esp_reader = None

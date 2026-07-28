@@ -15,7 +15,6 @@ import numpy as np
 import threading
 import math
 from pymavlink import mavutil
-import web_dashboard_mission
 from sensor_reader import ESP32Reader
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -173,7 +172,6 @@ def main():
     print(f"🎯 Target WP5: Lat {wp_target['lat']}, Lon {wp_target['lon']}, Yaw {wp_target['yaw']}")
 
     # Mulai Web Dashboard
-    web_dashboard_mission.start_dashboard(team, port=5004)
 
     # Inisialisasi ESP32 Sensor Reader
     esp_reader = None
@@ -270,7 +268,7 @@ def main():
                         rotate_to_yaw(master, wp_target['yaw'])
                         last_yaw_cmd_time = time.time()
                     if cur_lat and cur_lon and time.time() - last_gps_cmd_time > 1.0:
-                        goto_gps_position(master, cur_lat, cur_lon, target_alt, 0.5)
+                        goto_gps_position(master, cur_lat, cur_lon, target_alt)
                         last_gps_cmd_time = time.time()
                     if yaw_ok and alt_ok:
                         if alt_stable_start == 0:
