@@ -110,7 +110,7 @@ def send_change_speed(master, speed_ms):
         1, speed_ms, -1, 0, 0, 0, 0
     )
 
-def rotate_to_yaw(master, target_yaw):
+def rotate_to_yaw(master, cur_yaw, target_yaw):
     if master is None: return
     master.mav.command_long_send(
         master.target_system, master.target_component,
@@ -241,7 +241,7 @@ def main():
                     log_msg(f"Mode GUIDED aktif. Naik ke {target_alt}m & ROTASI YAW ke target {wp_target['yaw']:.1f} deg.", "ACTION")
                     if cur_lat and cur_lon:
                         goto_gps_position(master, cur_lat, cur_lon, target_alt)
-                    rotate_to_yaw(master, wp_target['yaw'])
+                    rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
                     state = STATE_ROTATE_YAW
 
                 elif state == STATE_ROTATE_YAW:
@@ -254,7 +254,7 @@ def main():
                             state = STATE_WAIT_ALT
                             alt_stable_start = 0
                         else:
-                            rotate_to_yaw(master, wp_target['yaw'])
+                            rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
 
                 elif state == STATE_WAIT_ALT:
                     state_str = "MENUNGGU YAW & ALT STABIL"
@@ -265,7 +265,7 @@ def main():
                     alt_ok = alt_diff < 0.3
                     if not yaw_ok and time.time() - last_yaw_cmd_time > 2.0:
                         log_msg(f"Re-send Yaw di WAIT_ALT: Cur={cur_yaw:.1f}, Target={wp_target['yaw']:.1f}, Diff={yaw_diff:.1f}", "ACTION")
-                        rotate_to_yaw(master, wp_target['yaw'])
+                        rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
                         last_yaw_cmd_time = time.time()
                     if cur_lat and cur_lon and time.time() - last_gps_cmd_time > 1.0:
                         goto_gps_position(master, cur_lat, cur_lon, target_alt)

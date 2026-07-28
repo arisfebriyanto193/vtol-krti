@@ -118,14 +118,18 @@ def send_change_speed(master, speed_ms):
         -1, 0, 0, 0, 0
     )
 
-def rotate_to_yaw(master, target_yaw):
-    """Mengirim perintah berputar ke sudut yaw (absolute)"""
+def rotate_to_yaw(master, current_yaw, target_yaw):
+    """Mengirim perintah berputar ke sudut yaw (absolute) dengan rute terpendek"""
     if master is None: return
+    
+    diff = (target_yaw - current_yaw) % 360
+    direction = 1 if diff <= 180 else -1
+    
     # MAV_CMD_CONDITION_YAW: param1: sudut, param2: kecepatan putar, param3: arah (-1 CCW, 1 CW), param4: relative=0/absolute=1
     master.mav.command_long_send(
         master.target_system, master.target_component,
         mavutil.mavlink.MAV_CMD_CONDITION_YAW, 0,
-        target_yaw, 15, 1, 0, 0, 0, 0
+        target_yaw, 15, direction, 0, 0, 0, 0
     )
 
 def get_shortest_yaw_diff(current_yaw, target_yaw):
@@ -254,7 +258,7 @@ def main():
                     # Kirim perintah naik ke target altitude sekaligus
                     if cur_lat and cur_lon:
                         goto_gps_position(master, cur_lat, cur_lon, target_alt)
-                    rotate_to_yaw(master, wp_target['yaw'])
+                    rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
                     last_yaw_cmd_time = time.time()
                     state = STATE_ROTATE_YAW
 
@@ -271,7 +275,7 @@ def main():
                             # Re-send perintah maksimal tiap 3 detik (menghindari command spamming)
                             if time.time() - last_yaw_cmd_time > 3.0:
                                 log_msg(f"Re-send Yaw cmd: Cur={cur_yaw:.1f}, Target={wp_target['yaw']:.1f}, Diff={diff:.1f}", "ACTION")
-                                rotate_to_yaw(master, wp_target['yaw'])
+                                rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
                                 last_yaw_cmd_time = time.time()
 
                 elif state == STATE_WAIT_ALT:
@@ -284,7 +288,7 @@ def main():
                     # Re-send yaw jika belum tercapai (pakai goto_gps position saja untuk hover, TANPA yaw override)
                     if not yaw_ok and time.time() - last_yaw_cmd_time > 2.0:
                         log_msg(f"Re-send Yaw di WAIT_ALT: Cur={cur_yaw:.1f}, Target={wp_target['yaw']:.1f}, Diff={yaw_diff:.1f}", "ACTION")
-                        rotate_to_yaw(master, wp_target['yaw'])
+                        rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
                         last_yaw_cmd_time = time.time()
                     # Hover di posisi saat ini + naik ke target alt (bitmask tidak override yaw)
                     if cur_lat and cur_lon and time.time() - last_gps_cmd_time > 1.0:
