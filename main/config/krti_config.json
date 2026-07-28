@@ -1,13 +1,13 @@
 {
-    "pixhawk_port": "/dev/ttyACM1",
+    "pixhawk_port": "/dev/ttyACM0",
     "pixhawk_baudrate": 115200,
-    "esp32_port": "/dev/ttyACM0",
+    "esp32_port": "/dev/ttyACM1",
     "esp32_baudrate": 115200,
     "camera_index": 0,
     "target_altitude": 2.0,
-    "drone_speed": 1.5,
+    "drone_speed": 0.5,
     "use_aruco_verification": false,
-    "team": "Merah",
+    "team": "Biru",
     "waypoints": {
         "wp1": {
             "lat": 0.0,
@@ -43,6 +43,40 @@
             "alt_pixhawk": 0.0,
             "alt_esp32": 0.0,
             "yaw": 0.0
+        }
+    },
+    "waypoints_Biru": {
+        "wp1": {
+            "lat": -6.9810129,
+            "lon": 110.4083378,
+            "alt_pixhawk": -0.01,
+            "alt_esp32": -1.0,
+            "yaw": 4.3,
+            "target_alt": 1.0
+        },
+        "wp2": {
+            "lat": -6.9809109,
+            "lon": 110.4083577,
+            "alt_pixhawk": 0.04,
+            "alt_esp32": -1.0,
+            "yaw": 8.83,
+            "target_alt": 1.0
+        },
+        "wp3": {
+            "lat": -6.9809273,
+            "lon": 110.4083928,
+            "alt_pixhawk": -0.07,
+            "alt_esp32": -1.0,
+            "yaw": 100.7,
+            "target_alt": 1.0
+        },
+        "wp4": {
+            "lat": -6.9809873,
+            "lon": 110.4083845,
+            "alt_pixhawk": -0.28,
+            "alt_esp32": -1.0,
+            "yaw": 191.67,
+            "target_alt": 1.0
         }
     }
 }

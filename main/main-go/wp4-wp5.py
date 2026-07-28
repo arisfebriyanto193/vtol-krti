@@ -154,13 +154,16 @@ def main():
     port = config.get('pixhawk_port', '/dev/ttyACM0')
     baud = config.get('pixhawk_baudrate', 115200)
     cam_index = config.get('camera_index', 0)
-    target_alt = config.get('target_altitude', 2.0)
-    drone_speed = config.get('drone_speed', 1.5)
     use_aruco = config.get('use_aruco_verification', True)
     
     team = config.get('team', 'Biru')
     wp_key = f'waypoints_{team}'
     wp_target = config.get(wp_key, {}).get('wp5', {})
+    
+    target_alt = wp_target.get('target_alt', config.get('target_altitude', 2.0))
+    drone_speed = wp_target.get('speed', config.get('drone_speed', 1.5))
+    global MAX_SPEED
+    MAX_SPEED = wp_target.get('max_aruco_speed', config.get('max_aruco_speed', 0.3))
     if not wp_target.get('lat'):
         print("❌ ERROR: Data WP5 belum dikalibrasi!")
         sys.exit(1)

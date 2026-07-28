@@ -152,7 +152,7 @@ except IOError:
 
 # State Machine UI (lihat deklarasi state di bagian atas file)
 
-main_menu_items = ["Menu Kalibrasi", "Menu Play", "Ganti Tim", "Info & WiFi"]
+main_menu_items = ["Menu Kalibrasi", "Menu Play", "Ganti Tim", "Info & WiFi", "Lihat Log"]
 main_menu_idx = 0
 
 team_menu_items = ["Biru", "Merah", "Kembali"]
@@ -171,6 +171,10 @@ play_wp_idx = 0
 
 info_menu_items = ["Pindai WiFi Baru", "Kembali"]
 info_menu_idx = 0
+
+log_menu_items = ["wp1-wp2", "wp2-wp3", "wp3-wp4", "wp4-wp5", "Kembali"]
+log_menu_idx = 0
+log_lines = []
 
 scanned_wifis = []
 wifi_scan_idx = 0
@@ -373,6 +377,35 @@ def render_team():
         
     display.image(image, rotation=0)
 
+def read_last_lines(filepath, num_lines=12):
+    if not os.path.exists(filepath):
+        return ["Log belum tersedia."]
+    try:
+        with open(filepath, 'r') as f:
+            lines = f.readlines()
+            result = []
+            for line in lines[-num_lines:]:
+                text = line.strip()
+                if len(text) > 42:
+                    text = text[:39] + "..."
+                result.append(text)
+            return result if result else ["Log kosong."]
+    except Exception as e:
+        return [f"Gagal baca: {e}"]
+
+def render_log_view():
+    draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
+    title = f"Log: {log_menu_items[log_menu_idx]}"
+    title_w, _ = get_text_size(title, font_main)
+    draw.text(((WIDTH - title_w) // 2, 5), title, font=font_main, fill=(0, 255, 255))
+    
+    start_y = 35
+    for i, line in enumerate(log_lines):
+        draw.text((5, start_y + (i * 15)), line, font=font_small, fill=(255, 255, 255))
+        
+    draw.text((10, 220), "[OK] Kembali", font=font_small, fill=(180, 180, 180))
+    display.image(image, rotation=0)
+
 def _start_process_delayed(script_path):
     global running_process
     time.sleep(1.5) # Beri waktu agar koneksi serial dilepas oleh pixhawk_loop
@@ -392,6 +425,7 @@ def loop_ui():
     global state, main_menu_idx, kalibrasi_idx, play_menu_idx, play_wp_idx
     global info_menu_idx, wifi_scan_idx, is_scanning, scanned_wifis, wifi_msg, wifi_msg_time
     global team_menu_idx, running_process, mission_finished, mission_finish_time
+    global log_menu_idx, log_lines
     
     prev_pressed = False
     next_pressed = False
@@ -413,6 +447,7 @@ def loop_ui():
                 if not is_scanning and scanned_wifis:
                     wifi_scan_idx = (wifi_scan_idx - 1) % len(scanned_wifis)
             elif state == 7: team_menu_idx = (team_menu_idx - 1) % len(team_menu_items)
+            elif state == 8: log_menu_idx = (log_menu_idx - 1) % len(log_menu_items)
             
         if btn_n and not next_pressed:
             if state == 0: main_menu_idx = (main_menu_idx + 1) % len(main_menu_items)
@@ -424,6 +459,7 @@ def loop_ui():
                 if not is_scanning and scanned_wifis:
                     wifi_scan_idx = (wifi_scan_idx + 1) % len(scanned_wifis)
             elif state == 7: team_menu_idx = (team_menu_idx + 1) % len(team_menu_items)
+            elif state == 8: log_menu_idx = (log_menu_idx + 1) % len(log_menu_items)
             
         if btn_o and not ok_pressed:
             if state == 0:
@@ -431,11 +467,12 @@ def loop_ui():
                 elif main_menu_idx == 1: state = 2
                 elif main_menu_idx == 2: state = 7
                 elif main_menu_idx == 3: state = 5
+                elif main_menu_idx == 4: state = 8
             elif state == 1:
                 handle_kalibrasi_save()
             elif state == 2:
                 if play_menu_idx == 0:
-                    run_mission("main.py")
+                    run_mission("play_all.py")
                 elif play_menu_idx == 1:
                     state = 3
                 elif play_menu_idx == 2:
@@ -484,6 +521,15 @@ def loop_ui():
                     state = 0
                 elif team_menu_idx == 2:
                     state = 0
+            elif state == 8:
+                if log_menu_idx == 4:
+                    state = 0
+                else:
+                    log_file = os.path.join(BASE_DIR, log_menu_items[log_menu_idx] + ".log")
+                    log_lines = read_last_lines(log_file, 12)
+                    state = 9
+            elif state == 9:
+                state = 8
 
         prev_pressed = btn_p
         next_pressed = btn_n
@@ -513,6 +559,8 @@ def loop_ui():
         elif state == 5: render_info_wifi()
         elif state == 6 and not is_scanning: render_wifi_scanner()
         elif state == 7: render_team()
+        elif state == 8: render_menu("Menu Log", log_menu_items, log_menu_idx)
+        elif state == 9: render_log_view()
 
         time.sleep(0.1)
 
