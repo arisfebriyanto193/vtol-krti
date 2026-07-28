@@ -166,13 +166,13 @@ kalibrasi_msg_time = 0
 play_menu_items = ["Play All", "Play per WP", "Kembali"]
 play_menu_idx = 0
 
-play_wp_items = ["wp1-wp2", "wp2-wp3", "wp3-wp4", "wp4-wp5", "Kembali"]
+play_wp_items = ["home-wp1", "wp1-wp2", "wp2-wp3", "wp3-wp4", "wp4-wp5", "Kembali"]
 play_wp_idx = 0
 
 info_menu_items = ["Pindai WiFi Baru", "Kembali"]
 info_menu_idx = 0
 
-log_menu_items = ["wp1-wp2", "wp2-wp3", "wp3-wp4", "wp4-wp5", "Kembali"]
+log_menu_items = ["home-wp1", "wp1-wp2", "wp2-wp3", "wp3-wp4", "wp4-wp5", "Kembali"]
 log_menu_idx = 0
 log_lines = []
 
@@ -478,7 +478,7 @@ def loop_ui():
                 elif play_menu_idx == 2:
                     state = 0
             elif state == 3:
-                if play_wp_idx == 4: # Kembali
+                if play_wp_idx == 5: # Kembali
                     state = 2
                 else:
                     script = play_wp_items[play_wp_idx] + ".py"
@@ -522,7 +522,7 @@ def loop_ui():
                 elif team_menu_idx == 2:
                     state = 0
             elif state == 8:
-                if log_menu_idx == 4:
+                if log_menu_idx == 5:
                     state = 0
                 else:
                     log_file = os.path.join(BASE_DIR, log_menu_items[log_menu_idx] + ".log")

@@ -12,6 +12,7 @@ import signal
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 scripts = [
+    "home-wp1.py",
     "wp1-wp2.py",
     "wp2-wp3.py",
     "wp3-wp4.py",
