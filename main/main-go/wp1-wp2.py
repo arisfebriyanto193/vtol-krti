@@ -385,13 +385,6 @@ def main():
             cv2.putText(display_frame, f"STATE: {state_str}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
             # cv2.imshow("Navigasi WP1->WP2", display_frame) # Dinonaktifkan untuk Headless mode
 
-            # Update dashboard
-            web_dashboard_mission.update_dashboard(
-                mode=mode, state_str=state_str,
-                lat=drone_telemetry['lat'], lon=drone_telemetry['lon'], alt=drone_telemetry['alt'],
-                yaw=drone_telemetry['yaw'], roll=drone_telemetry['roll'], pitch=drone_telemetry['pitch'],
-                battery=drone_telemetry['battery']
-            )
 
             master.mav.heartbeat_send(
                 mavutil.mavlink.MAV_TYPE_GCS,
