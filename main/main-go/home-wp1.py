@@ -184,10 +184,12 @@ def main():
     web_dashboard_mission.start_dashboard(team, port=5000)
 
     # Inisialisasi ESP32 Sensor Reader
-    esp_port = config.get('esp32_port', '/dev/ttyACM1')
-    esp_baud = config.get('esp32_baudrate', 115200)
-    esp_reader = ESP32Reader(port=esp_port, baudrate=esp_baud)
-    esp_reader.start()
+    esp_reader = None
+    if config.get('use_obstacle_avoidance', True):
+        esp_port = config.get('esp32_port', '/dev/ttyACM1')
+        esp_baud = config.get('esp32_baudrate', 115200)
+        esp_reader = ESP32Reader(port=esp_port, baudrate=esp_baud)
+        esp_reader.start()
 
     master = connect_pixhawk(port, baud)
 
@@ -304,7 +306,7 @@ def main():
                             log_msg(f"Menunggu: YawOK={yaw_ok}({yaw_diff:.1f}deg) AltOK={alt_ok}(cur={cur_alt:.2f}m tgt={target_alt:.1f}m)", "WAIT")
 
                 elif state == STATE_GOTO_GPS:
-                    front_dist_cm = esp_reader.get_distance("DEPAN", 999.0)
+                    front_dist_cm = esp_reader.get_distance("DEPAN", 999.0) if esp_reader else 999.0
                     
                     if use_obstacle_avoidance and front_dist_cm < 200.0:
                         state_str = "AWAS OBSTACLE! (HOVER)"

@@ -30,7 +30,7 @@ drone_yaw = 0.0
 # State Machine UI (dideklarasikan di sini agar tersedia sebelum thread dimulai)
 # 0 = Main Menu, 1 = Kalibrasi, 2 = Play Menu, 3 = Play per WP, 4 = Misi Berjalan
 # 5 = Info & WiFi, 6 = WiFi Scanner, 7 = Ganti Tim, 8 = Menu Log, 9 = View Log
-# 10 = Test Sensor
+# 10 = Test Sensor, 11 = Pengaturan, 12 = Edit Alt, 13 = Edit Speed
 state = 0
 
 def load_config():
@@ -47,20 +47,13 @@ def save_config():
 
 load_config()
 
-# Coba connect ke ESP32
-if config_data.get('esp32_port'):
-    try:
-        esp_reader = ESP32Reader(port=config_data['esp32_port'], baudrate=config_data.get('esp32_baudrate', 115200))
-        esp_reader.start()
-    except Exception as e:
-        print(f"Gagal konek ESP32: {e}")
+# Inisialisasi awal ESP32 sekarang akan ditangani di dalam pixhawk_loop agar bisa dilepas dan disambung ulang
+esp_reader = None
 
 def pixhawk_loop():
-    global master, drone_lat, drone_lon, drone_alt_px, drone_yaw, state
+    global master, esp_reader, drone_lat, drone_lon, drone_alt_px, drone_yaw, state
     port = config_data.get('pixhawk_port')
     baud = config_data.get('pixhawk_baudrate', 115200)
-    if not port:
-        return
 
     while True:
         if state == 4:
@@ -70,11 +63,27 @@ def pixhawk_loop():
                 except Exception:
                     pass
                 master = None
-                print("⏸️ Port serial dilepas sementara untuk misi berjalan.")
+                print("⏸️ Port Pixhawk dilepas sementara untuk misi berjalan.")
+                
+            if esp_reader is not None:
+                try:
+                    esp_reader.stop()
+                except Exception:
+                    pass
+                esp_reader = None
+                print("⏸️ Port ESP32 dilepas sementara untuk misi berjalan.")
+                
             time.sleep(1)
             continue
             
-        if master is None:
+        if esp_reader is None and config_data.get('esp32_port') and config_data.get('use_obstacle_avoidance', True):
+            try:
+                esp_reader = ESP32Reader(port=config_data['esp32_port'], baudrate=config_data.get('esp32_baudrate', 115200))
+                esp_reader.start()
+            except Exception:
+                pass
+                
+        if master is None and port:
             try:
                 print(f"Menghubungkan ke Pixhawk di {port}...")
                 master = mavutil.mavlink_connection(port, baud=baud)
@@ -153,8 +162,10 @@ except IOError:
 
 # State Machine UI (lihat deklarasi state di bagian atas file)
 
-main_menu_items = ["Menu Kalibrasi", "Menu Play", "Ganti Tim", "Info & WiFi", "Lihat Log", "Test Sensor"]
+main_menu_items = ["Menu Kalibrasi", "Menu Play", "Pengaturan", "Ganti Tim", "Info & WiFi", "Lihat Log", "Test Sensor"]
 main_menu_idx = 0
+
+setting_menu_idx = 0
 
 team_menu_items = ["Biru", "Merah", "Kembali"]
 team_menu_idx = 0
@@ -223,8 +234,9 @@ def render_kalibrasi():
     draw.text((10, 100), f"Alt ESP: {alt_esp:.1f} cm", font=font_small, fill=(255, 255, 255))
     draw.text((10, 120), f"Yaw: {drone_yaw:.1f} deg", font=font_small, fill=(255, 255, 255))
     
-    # Target Alt selalu 1 meter
-    draw.text((10, 150), "Target Alt: 1.0 m", font=font_main, fill=(0, 255, 0))
+    # Target Alt mengikuti config global
+    tgt_alt = config_data.get('target_altitude', 1.0)
+    draw.text((10, 150), f"Target Alt: {tgt_alt} m", font=font_main, fill=(0, 255, 0))
     
     draw.text((10, 200), "[Prev] [Next] Ganti WP | [OK] Save", font=font_small, fill=(180, 180, 180))
     
@@ -279,7 +291,7 @@ def handle_kalibrasi_save():
         "alt_pixhawk": round(drone_alt_px, 2),
         "alt_esp32": round(alt_esp, 2),
         "yaw": round(drone_yaw, 2),
-        "target_alt": 1.0 # Fix 1 meter
+        "target_alt": config_data.get('target_altitude', 1.0)
     }
     save_config()
     kalibrasi_msg = f"{wp.upper()} Disimpan!"
@@ -432,6 +444,28 @@ def render_test_sensor():
     draw.text((10, 220), "[OK] Kembali", font=font_small, fill=(180, 180, 180))
     display.image(image, rotation=0)
 
+def render_setting_menu():
+    alt = config_data.get('target_altitude', 1.0)
+    spd = config_data.get('drone_speed', 0.5)
+    items = [
+        f"Ketinggian: {alt:.1f} m",
+        f"Kecepatan: {spd:.1f} m/s",
+        "Kembali"
+    ]
+    render_menu("Pengaturan", items, setting_menu_idx)
+
+def render_edit_val(title, val, unit):
+    draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
+    title_w, _ = get_text_size(title, font_main)
+    draw.text(((WIDTH - title_w) // 2, 20), title, font=font_main, fill=(0, 255, 255))
+    
+    val_str = f"{val:.1f} {unit}"
+    val_w, _ = get_text_size(val_str, font_main)
+    draw.text(((WIDTH - val_w) // 2, 100), val_str, font=font_main, fill=(0, 255, 0))
+    
+    draw.text((10, 200), "[Prev] -   [Next] +   [OK] Save", font=font_small, fill=(180, 180, 180))
+    display.image(image, rotation=0)
+
 def _start_process_delayed(script_path):
     global running_process
     time.sleep(1.5) # Beri waktu agar koneksi serial dilepas oleh pixhawk_loop
@@ -451,7 +485,7 @@ def loop_ui():
     global state, main_menu_idx, kalibrasi_idx, play_menu_idx, play_wp_idx
     global info_menu_idx, wifi_scan_idx, is_scanning, scanned_wifis, wifi_msg, wifi_msg_time
     global team_menu_idx, running_process, mission_finished, mission_finish_time
-    global log_menu_idx, log_lines
+    global log_menu_idx, log_lines, setting_menu_idx
     
     prev_pressed = False
     next_pressed = False
@@ -474,6 +508,13 @@ def loop_ui():
                     wifi_scan_idx = (wifi_scan_idx - 1) % len(scanned_wifis)
             elif state == 7: team_menu_idx = (team_menu_idx - 1) % len(team_menu_items)
             elif state == 8: log_menu_idx = (log_menu_idx - 1) % len(log_menu_items)
+            elif state == 11: setting_menu_idx = (setting_menu_idx - 1) % 3
+            elif state == 12:
+                alt = config_data.get('target_altitude', 1.0)
+                config_data['target_altitude'] = max(0.5, alt - 0.1)
+            elif state == 13:
+                spd = config_data.get('drone_speed', 0.5)
+                config_data['drone_speed'] = max(0.1, spd - 0.1)
             
         if btn_n and not next_pressed:
             if state == 0: main_menu_idx = (main_menu_idx + 1) % len(main_menu_items)
@@ -486,15 +527,23 @@ def loop_ui():
                     wifi_scan_idx = (wifi_scan_idx + 1) % len(scanned_wifis)
             elif state == 7: team_menu_idx = (team_menu_idx + 1) % len(team_menu_items)
             elif state == 8: log_menu_idx = (log_menu_idx + 1) % len(log_menu_items)
+            elif state == 11: setting_menu_idx = (setting_menu_idx + 1) % 3
+            elif state == 12:
+                alt = config_data.get('target_altitude', 1.0)
+                config_data['target_altitude'] = min(5.0, alt + 0.1)
+            elif state == 13:
+                spd = config_data.get('drone_speed', 0.5)
+                config_data['drone_speed'] = min(3.0, spd + 0.1)
             
         if btn_o and not ok_pressed:
             if state == 0:
                 if main_menu_idx == 0: state = 1
                 elif main_menu_idx == 1: state = 2
-                elif main_menu_idx == 2: state = 7
-                elif main_menu_idx == 3: state = 5
-                elif main_menu_idx == 4: state = 8
-                elif main_menu_idx == 5: state = 10
+                elif main_menu_idx == 2: state = 11
+                elif main_menu_idx == 3: state = 7
+                elif main_menu_idx == 4: state = 5
+                elif main_menu_idx == 5: state = 8
+                elif main_menu_idx == 6: state = 10
             elif state == 1:
                 handle_kalibrasi_save()
             elif state == 2:
@@ -559,6 +608,16 @@ def loop_ui():
                 state = 8
             elif state == 10:
                 state = 0
+            elif state == 11:
+                if setting_menu_idx == 0:
+                    state = 12
+                elif setting_menu_idx == 1:
+                    state = 13
+                else:
+                    state = 0
+            elif state == 12 or state == 13:
+                save_config()
+                state = 11
 
         prev_pressed = btn_p
         next_pressed = btn_n
@@ -591,6 +650,9 @@ def loop_ui():
         elif state == 8: render_menu("Menu Log", log_menu_items, log_menu_idx)
         elif state == 9: render_log_view()
         elif state == 10: render_test_sensor()
+        elif state == 11: render_setting_menu()
+        elif state == 12: render_edit_val("Edit Ketinggian", config_data.get('target_altitude', 1.0), "m")
+        elif state == 13: render_edit_val("Edit Kecepatan", config_data.get('drone_speed', 0.5), "m/s")
 
         time.sleep(0.1)
 
