@@ -16,6 +16,7 @@ import threading
 import math
 from pymavlink import mavutil
 import web_dashboard_mission
+from sensor_reader import ESP32Reader
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.abspath(os.path.join(BASE_DIR, '..', 'config', 'krti_config.json'))
@@ -173,6 +174,12 @@ def main():
     # Mulai Web Dashboard
     web_dashboard_mission.start_dashboard(team, port=5004)
 
+    # Inisialisasi ESP32 Sensor Reader
+    esp_port = config.get('esp32_port', '/dev/ttyACM1')
+    esp_baud = config.get('esp32_baudrate', 115200)
+    esp_reader = ESP32Reader(port=esp_port, baudrate=esp_baud)
+    esp_reader.start()
+
     master = connect_pixhawk(port, baud)
 
     cap = None
@@ -275,22 +282,34 @@ def main():
                             log_msg(f"Menunggu: YawOK={yaw_ok}({yaw_diff:.1f}deg) AltOK={alt_ok}(cur={cur_alt:.2f}m tgt={target_alt:.1f}m)", "WAIT")
 
                 elif state == STATE_GOTO_GPS:
-                    state_str = "NAVIGASI MAJU (GPS) -> WP5"
-                    if cur_lat and cur_lon:
-                        dist = calculate_distance(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
-                        cv2.putText(display_frame, f"Dist WP5: {dist:.1f} m", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-                        
-                        arrival_dist = 2.0 if use_aruco else 0.3
-                        if dist < arrival_dist:
-                            if use_aruco:
-                                log_msg(f"Mendekati WP5 (Jarak: {dist:.1f}m). Beralih ke pencarian ArUco!", "ACTION")
-                                state = STATE_CENTER_ARUCO
+                    front_dist_cm = esp_reader.get_distance("DEPAN", 999.0)
+                    
+                    if front_dist_cm < 200.0:
+                        state_str = "AWAS OBSTACLE! (HOVER)"
+                        if time.time() - last_log_time > 0.9:
+                            log_msg(f"BAHAYA! Objek di depan ({front_dist_cm:.1f} cm). Drone berhenti!", "WARNING")
+                        send_velocity(master, 0, 0, 0)
+                        last_gps_cmd_time = 0
+                        cv2.putText(display_frame, f"OBSTACLE: {front_dist_cm} cm", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    else:
+                        state_str = "NAVIGASI MAJU (GPS) -> WP5"
+                        if cur_lat and cur_lon:
+                            dist = calculate_distance(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
+                            cv2.putText(display_frame, f"Dist WP5: {dist:.1f} m", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                            
+                            arrival_dist = 2.0 if use_aruco else 0.3
+                            if dist < arrival_dist:
+                                if use_aruco:
+                                    log_msg(f"Mendekati WP5 (Jarak: {dist:.1f}m). Beralih ke pencarian ArUco!", "ACTION")
+                                    state = STATE_CENTER_ARUCO
+                                else:
+                                    log_msg(f"Tiba di WP5 (Jarak: {dist:.1f}m). ArUco DINONAKTIFKAN. LANGSUNG LANDING...", "ACTION")
+                                    state = STATE_LAND
                             else:
-                                log_msg(f"Tiba di WP5 (Jarak: {dist:.1f}m). ArUco DINONAKTIFKAN. LANGSUNG LANDING...", "ACTION")
-                                state = STATE_LAND
-                        else:
-                            log_msg(f"Mengirim GPS target. Jarak sisa: {dist:.1f}m | Kecepatan: {drone_speed}m/s", "NAV")
-                            goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
+                                if time.time() - last_gps_cmd_time > 0.5:
+                                    log_msg(f"Mengirim GPS target. Jarak sisa: {dist:.1f}m | Kecepatan: {drone_speed}m/s", "NAV")
+                                    goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
+                                    last_gps_cmd_time = time.time()
 
                 elif state == STATE_CENTER_ARUCO:
                     state_str = "VISUAL CENTERING WP5"
@@ -368,6 +387,8 @@ def main():
         if cap is not None:
             cap.release()
         cv2.destroyAllWindows()
+        if esp_reader:
+            esp_reader.stop()
 
 if __name__ == '__main__':
     main()

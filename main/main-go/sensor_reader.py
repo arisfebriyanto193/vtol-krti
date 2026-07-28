@@ -56,10 +56,14 @@ class ESP32Reader:
 
     def get_bottom_distance(self):
         """Mendapatkan jarak sensor bawah (untuk kalibrasi)"""
+        return self.get_distance("BAWAH", 0.0)
+
+    def get_distance(self, sensor_name, default_val=999.0):
+        """Mendapatkan jarak sensor tertentu (misal: DEPAN, BAWAH, KIRI, KANAN)"""
         sensors = self.latest_data.get("sensors", {})
-        bottom_sensor = sensors.get("BAWAH", {})
-        dist = bottom_sensor.get("distance_cm")
-        return dist if dist is not None else 0.0
+        sensor_data = sensors.get(sensor_name, {})
+        dist = sensor_data.get("distance_cm")
+        return dist if dist is not None else default_val
 
     def stop(self):
         self.running = False

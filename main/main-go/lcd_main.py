@@ -29,7 +29,8 @@ drone_yaw = 0.0
 
 # State Machine UI (dideklarasikan di sini agar tersedia sebelum thread dimulai)
 # 0 = Main Menu, 1 = Kalibrasi, 2 = Play Menu, 3 = Play per WP, 4 = Misi Berjalan
-# 5 = Info & WiFi, 6 = WiFi Scanner, 7 = Ganti Tim
+# 5 = Info & WiFi, 6 = WiFi Scanner, 7 = Ganti Tim, 8 = Menu Log, 9 = View Log
+# 10 = Test Sensor
 state = 0
 
 def load_config():
@@ -152,7 +153,7 @@ except IOError:
 
 # State Machine UI (lihat deklarasi state di bagian atas file)
 
-main_menu_items = ["Menu Kalibrasi", "Menu Play", "Ganti Tim", "Info & WiFi", "Lihat Log"]
+main_menu_items = ["Menu Kalibrasi", "Menu Play", "Ganti Tim", "Info & WiFi", "Lihat Log", "Test Sensor"]
 main_menu_idx = 0
 
 team_menu_items = ["Biru", "Merah", "Kembali"]
@@ -406,6 +407,31 @@ def render_log_view():
     draw.text((10, 220), "[OK] Kembali", font=font_small, fill=(180, 180, 180))
     display.image(image, rotation=0)
 
+def render_test_sensor():
+    draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
+    title = "Testing Sensor"
+    title_w, _ = get_text_size(title, font_main)
+    draw.text(((WIDTH - title_w) // 2, 5), title, font=font_main, fill=(0, 255, 255))
+    
+    if esp_reader:
+        sensors = esp_reader.latest_data.get("sensors", {})
+        ts = esp_reader.latest_data.get("ts", 0)
+        
+        if time.time() - ts > 3:
+            draw.text((20, 50), "Data usang/ESP32 Mati!", font=font_small, fill=(255, 0, 0))
+        elif not sensors:
+            draw.text((20, 50), "Belum ada data sensor", font=font_small, fill=(255, 255, 0))
+        else:
+            start_y = 50
+            for i, (name, data) in enumerate(sensors.items()):
+                dist = data.get('distance_cm', 0.0)
+                draw.text((20, start_y + (i * 25)), f"{name}: {dist:.1f} cm", font=font_main, fill=(0, 255, 0))
+    else:
+        draw.text((20, 50), "ESP32 tidak terhubung", font=font_small, fill=(255, 0, 0))
+        
+    draw.text((10, 220), "[OK] Kembali", font=font_small, fill=(180, 180, 180))
+    display.image(image, rotation=0)
+
 def _start_process_delayed(script_path):
     global running_process
     time.sleep(1.5) # Beri waktu agar koneksi serial dilepas oleh pixhawk_loop
@@ -468,6 +494,7 @@ def loop_ui():
                 elif main_menu_idx == 2: state = 7
                 elif main_menu_idx == 3: state = 5
                 elif main_menu_idx == 4: state = 8
+                elif main_menu_idx == 5: state = 10
             elif state == 1:
                 handle_kalibrasi_save()
             elif state == 2:
@@ -530,6 +557,8 @@ def loop_ui():
                     state = 9
             elif state == 9:
                 state = 8
+            elif state == 10:
+                state = 0
 
         prev_pressed = btn_p
         next_pressed = btn_n
@@ -561,6 +590,7 @@ def loop_ui():
         elif state == 7: render_team()
         elif state == 8: render_menu("Menu Log", log_menu_items, log_menu_idx)
         elif state == 9: render_log_view()
+        elif state == 10: render_test_sensor()
 
         time.sleep(0.1)
 
