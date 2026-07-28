@@ -146,6 +146,7 @@ def main():
     baud = config.get('pixhawk_baudrate', 115200)
     cam_index = config.get('camera_index', 0)
     use_aruco = config.get('use_aruco_verification', True)
+    use_obstacle_avoidance = config.get('use_obstacle_avoidance', True)
     
     team = config.get('team', 'Biru')
     wp_key = f'waypoints_{team}'
@@ -282,7 +283,7 @@ def main():
                 elif state == STATE_GOTO_GPS:
                     front_dist_cm = esp_reader.get_distance("DEPAN", 999.0)
                     
-                    if front_dist_cm < 200.0:
+                    if use_obstacle_avoidance and front_dist_cm < 200.0:
                         state_str = "AWAS OBSTACLE! (HOVER)"
                         if time.time() - last_log_time > 0.9:
                             log_msg(f"BAHAYA! Objek di depan ({front_dist_cm:.1f} cm). Drone berhenti!", "WARNING")
