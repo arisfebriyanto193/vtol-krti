@@ -8,6 +8,7 @@ import subprocess
 import os
 import time
 import sys
+import signal
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 scripts = [
@@ -17,7 +18,25 @@ scripts = [
     "wp4-wp5.py"
 ]
 
+current_process = None
+
+def signal_handler(signum, frame):
+    global current_process
+    print("\n🛑 Menerima sinyal terminasi. Menghentikan segmen yang sedang berjalan...")
+    if current_process is not None:
+        try:
+            current_process.terminate()
+            current_process.wait(timeout=2)
+        except Exception:
+            pass
+    sys.exit(0)
+
+# Pasang handler untuk SIGTERM dan SIGINT agar anak proses (wp scripts) juga ikut mati
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
 def main():
+    global current_process
     print("🚀 Memulai eksekusi seluruh segmen misi secara berurutan...")
     for script in scripts:
         print(f"\n======================================")
@@ -30,13 +49,13 @@ def main():
             break
 
         # Jalankan script menggunakan python
-        process = subprocess.Popen([sys.executable, script_path])
+        current_process = subprocess.Popen([sys.executable, script_path])
         
         # Tunggu sampai script selesai (berjalan sukses atau abort)
-        process.wait()
+        current_process.wait()
         
-        if process.returncode != 0:
-            print(f"❌ Segmen {script} berhenti dengan error (Exit Code: {process.returncode}).")
+        if current_process.returncode != 0:
+            print(f"❌ Segmen {script} berhenti dengan error (Exit Code: {current_process.returncode}).")
             print("🛑 Menghentikan antrian misi selanjutnya demi keamanan.")
             break
             
