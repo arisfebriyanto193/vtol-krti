@@ -475,6 +475,7 @@ def run_mission(script_name):
     global state, running_mission, running_process, mission_finished
     running_mission = script_name
     mission_finished = False
+    running_process = None  # Reset state proses lama agar tidak langsung dianggap selesai!
     state = 4
     script_path = os.path.join(BASE_DIR, script_name)
     print(f"Menyiapkan misi: {script_path}")
