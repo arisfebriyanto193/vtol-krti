@@ -180,6 +180,7 @@ def main():
     state = STATE_INIT
     stable_start_time = 0
     alt_stable_start = 0
+    done_start_time = 0
     cur_lat, cur_lon, cur_yaw = None, None, None
 
     last_log_time = 0
@@ -322,6 +323,11 @@ def main():
                 elif state == STATE_DONE:
                     state_str = "SEGMEN SELESAI (HOVER)"
                     send_velocity(master, 0, 0, 0)
+                    if done_start_time == 0:
+                        done_start_time = time.time()
+                    elif time.time() - done_start_time > 2.0:
+                        log_msg("✅ Hover selesai. Mengakhiri script untuk lanjut ke segmen berikutnya.", "ACTION")
+                        break
 
             if time.time() - last_log_time > 1.0:
                 log_msg(f"Mode={mode} | State={state_str} | TgtYaw={wp_target['yaw']:.1f} | CurYaw={cur_yaw if cur_yaw else 0:.1f} | Lat={cur_lat if cur_lat else 0:.6f} | Lon={cur_lon if cur_lon else 0:.6f} | Alt={drone_telemetry['alt']:.1f}m")

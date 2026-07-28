@@ -190,6 +190,7 @@ def main():
     state = STATE_INIT
     stable_start_time = 0
     alt_stable_start = 0
+    done_start_time = 0
     cur_lat, cur_lon, cur_yaw = None, None, None
 
     last_log_time = 0
@@ -327,6 +328,11 @@ def main():
                 
                 elif state == STATE_DONE:
                     state_str = "SEGMEN SELESAI (LANDED)"
+                    if done_start_time == 0:
+                        done_start_time = time.time()
+                    elif time.time() - done_start_time > 2.0:
+                        log_msg("✅ Pendaratan selesai. Mengakhiri script.", "ACTION")
+                        break
 
             if time.time() - last_log_time > 1.0:
                 print(f"[DEBUG] Mode: {mode} | State: {state_str} | Target Yaw: {wp_target['yaw']:.1f} | Cur Yaw: {cur_yaw if cur_yaw else 0:.1f} | Lat/Lon: {cur_lat if cur_lat else 0:.6f}, {cur_lon if cur_lon else 0:.6f}")
