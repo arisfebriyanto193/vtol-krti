@@ -205,15 +205,20 @@ def get_text_size(text, font):
 
 def render_menu(title, items, selected_idx):
     draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
-    # Title (Warna Cyan terbalik: BGR = 255, 255, 0)
     title_w, _ = get_text_size(title, font_main)
-    draw.text(((WIDTH - title_w) // 2, 10), title, font=font_main, fill=(0, 255, 255))
+    draw.text(((WIDTH - title_w) // 2, 5), title, font=font_main, fill=(0, 255, 255))
     
-    start_y = 50
-    for i, item in enumerate(items):
-        color = (0, 0, 255) if i == selected_idx else (255, 255, 255) # Merah jika terpilih
+    visible_items = 7
+    start_idx = max(0, min(selected_idx - visible_items // 2, len(items) - visible_items))
+    end_idx = min(len(items), start_idx + visible_items)
+    
+    start_y = 40
+    for i in range(start_idx, end_idx):
+        color = (0, 0, 255) if i == selected_idx else (255, 255, 255)
         prefix = "> " if i == selected_idx else "  "
-        draw.text((20, start_y + (i * 25)), prefix + item, font=font_main, fill=color)
+        text = prefix + items[i]
+        if len(text) > 22: text = text[:19] + "..."
+        draw.text((10, start_y + ((i - start_idx) * 26)), text, font=font_main, fill=color)
     
     display.image(image, rotation=0)
 
@@ -447,9 +452,19 @@ def render_test_sensor():
 def render_setting_menu():
     alt = config_data.get('target_altitude', 1.0)
     spd = config_data.get('drone_speed', 0.5)
+    pix = config_data.get('pixhawk_port', '/dev/ttyACM0')
+    esp = config_data.get('esp32_port', '/dev/ttyACM1')
+    aruco = config_data.get('use_aruco_verification', False)
+    obs = config_data.get('use_obstacle_avoidance', False)
+    
     items = [
         f"Ketinggian: {alt:.1f} m",
         f"Kecepatan: {spd:.1f} m/s",
+        f"Pix: {pix.replace('/dev/', '')}",
+        f"ESP: {esp.replace('/dev/', '')}",
+        f"Aruco: {'ON' if aruco else 'OFF'}",
+        f"Obstacle: {'ON' if obs else 'OFF'}",
+        "Restart Systemd",
         "Kembali"
     ]
     render_menu("Pengaturan", items, setting_menu_idx)
@@ -459,7 +474,11 @@ def render_edit_val(title, val, unit):
     title_w, _ = get_text_size(title, font_main)
     draw.text(((WIDTH - title_w) // 2, 20), title, font=font_main, fill=(0, 255, 255))
     
-    val_str = f"{val:.1f} {unit}"
+    if isinstance(val, str):
+        val_str = val
+    else:
+        val_str = f"{val:.1f} {unit}"
+        
     val_w, _ = get_text_size(val_str, font_main)
     draw.text(((WIDTH - val_w) // 2, 100), val_str, font=font_main, fill=(0, 255, 0))
     
@@ -509,13 +528,23 @@ def loop_ui():
                     wifi_scan_idx = (wifi_scan_idx - 1) % len(scanned_wifis)
             elif state == 7: team_menu_idx = (team_menu_idx - 1) % len(team_menu_items)
             elif state == 8: log_menu_idx = (log_menu_idx - 1) % len(log_menu_items)
-            elif state == 11: setting_menu_idx = (setting_menu_idx - 1) % 3
+            elif state == 11: setting_menu_idx = (setting_menu_idx - 1) % 8
             elif state == 12:
                 alt = config_data.get('target_altitude', 1.0)
                 config_data['target_altitude'] = max(0.5, alt - 0.1)
             elif state == 13:
                 spd = config_data.get('drone_speed', 0.5)
                 config_data['drone_speed'] = max(0.1, spd - 0.1)
+            elif state == 14:
+                ports = ["/dev/ttyACM0", "/dev/ttyACM1", "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/serial0"]
+                curr = config_data.get('pixhawk_port', '/dev/ttyACM0')
+                idx = ports.index(curr) if curr in ports else 0
+                config_data['pixhawk_port'] = ports[(idx - 1) % len(ports)]
+            elif state == 15:
+                ports = ["/dev/ttyACM0", "/dev/ttyACM1", "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/serial0"]
+                curr = config_data.get('esp32_port', '/dev/ttyACM1')
+                idx = ports.index(curr) if curr in ports else 0
+                config_data['esp32_port'] = ports[(idx - 1) % len(ports)]
             
         if btn_n and not next_pressed:
             if state == 0: main_menu_idx = (main_menu_idx + 1) % len(main_menu_items)
@@ -528,13 +557,23 @@ def loop_ui():
                     wifi_scan_idx = (wifi_scan_idx + 1) % len(scanned_wifis)
             elif state == 7: team_menu_idx = (team_menu_idx + 1) % len(team_menu_items)
             elif state == 8: log_menu_idx = (log_menu_idx + 1) % len(log_menu_items)
-            elif state == 11: setting_menu_idx = (setting_menu_idx + 1) % 3
+            elif state == 11: setting_menu_idx = (setting_menu_idx + 1) % 8
             elif state == 12:
                 alt = config_data.get('target_altitude', 1.0)
                 config_data['target_altitude'] = min(5.0, alt + 0.1)
             elif state == 13:
                 spd = config_data.get('drone_speed', 0.5)
                 config_data['drone_speed'] = min(3.0, spd + 0.1)
+            elif state == 14:
+                ports = ["/dev/ttyACM0", "/dev/ttyACM1", "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/serial0"]
+                curr = config_data.get('pixhawk_port', '/dev/ttyACM0')
+                idx = ports.index(curr) if curr in ports else 0
+                config_data['pixhawk_port'] = ports[(idx + 1) % len(ports)]
+            elif state == 15:
+                ports = ["/dev/ttyACM0", "/dev/ttyACM1", "/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/serial0"]
+                curr = config_data.get('esp32_port', '/dev/ttyACM1')
+                idx = ports.index(curr) if curr in ports else 0
+                config_data['esp32_port'] = ports[(idx + 1) % len(ports)]
             
         if btn_o and not ok_pressed:
             if state == 0:
@@ -611,12 +650,29 @@ def loop_ui():
                 state = 0
             elif state == 11:
                 if setting_menu_idx == 0:
-                    state = 12
+                    state = 12 # Alt
                 elif setting_menu_idx == 1:
-                    state = 13
+                    state = 13 # Speed
+                elif setting_menu_idx == 2:
+                    state = 14 # Pixhawk Port
+                elif setting_menu_idx == 3:
+                    state = 15 # ESP32 Port
+                elif setting_menu_idx == 4:
+                    config_data['use_aruco_verification'] = not config_data.get('use_aruco_verification', False)
+                    save_config()
+                elif setting_menu_idx == 5:
+                    config_data['use_obstacle_avoidance'] = not config_data.get('use_obstacle_avoidance', False)
+                    save_config()
+                elif setting_menu_idx == 6:
+                    # Restart systemd service
+                    draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
+                    draw.text((20, 100), "Restarting Service...", font=font_main, fill=(255, 0, 0))
+                    display.image(image, rotation=0)
+                    subprocess.Popen(['sudo', 'systemctl', 'restart', 'vtol-krti.service'])
+                    time.sleep(2)
                 else:
                     state = 0
-            elif state == 12 or state == 13:
+            elif state in [12, 13, 14, 15]:
                 save_config()
                 state = 11
 
@@ -654,6 +710,8 @@ def loop_ui():
         elif state == 11: render_setting_menu()
         elif state == 12: render_edit_val("Edit Ketinggian", config_data.get('target_altitude', 1.0), "m")
         elif state == 13: render_edit_val("Edit Kecepatan", config_data.get('drone_speed', 0.5), "m/s")
+        elif state == 14: render_edit_val("Pixhawk Port", config_data.get('pixhawk_port', '/dev/ttyACM0'), "")
+        elif state == 15: render_edit_val("ESP32 Port", config_data.get('esp32_port', '/dev/ttyACM1'), "")
 
         time.sleep(0.1)
 
