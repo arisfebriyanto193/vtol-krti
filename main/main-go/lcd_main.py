@@ -464,6 +464,7 @@ def render_setting_menu():
         f"ESP: {esp.replace('/dev/', '')}",
         f"Aruco: {'ON' if aruco else 'OFF'}",
         f"Obstacle: {'ON' if obs else 'OFF'}",
+        "Update Git & Restart",
         "Restart Systemd",
         "Kembali"
     ]
@@ -528,7 +529,7 @@ def loop_ui():
                     wifi_scan_idx = (wifi_scan_idx - 1) % len(scanned_wifis)
             elif state == 7: team_menu_idx = (team_menu_idx - 1) % len(team_menu_items)
             elif state == 8: log_menu_idx = (log_menu_idx - 1) % len(log_menu_items)
-            elif state == 11: setting_menu_idx = (setting_menu_idx - 1) % 8
+            elif state == 11: setting_menu_idx = (setting_menu_idx - 1) % 9
             elif state == 12:
                 alt = config_data.get('target_altitude', 1.0)
                 config_data['target_altitude'] = max(0.5, alt - 0.1)
@@ -557,7 +558,7 @@ def loop_ui():
                     wifi_scan_idx = (wifi_scan_idx + 1) % len(scanned_wifis)
             elif state == 7: team_menu_idx = (team_menu_idx + 1) % len(team_menu_items)
             elif state == 8: log_menu_idx = (log_menu_idx + 1) % len(log_menu_items)
-            elif state == 11: setting_menu_idx = (setting_menu_idx + 1) % 8
+            elif state == 11: setting_menu_idx = (setting_menu_idx + 1) % 9
             elif state == 12:
                 alt = config_data.get('target_altitude', 1.0)
                 config_data['target_altitude'] = min(5.0, alt + 0.1)
@@ -664,6 +665,21 @@ def loop_ui():
                     config_data['use_obstacle_avoidance'] = not config_data.get('use_obstacle_avoidance', False)
                     save_config()
                 elif setting_menu_idx == 6:
+                    # Update via Git & Restart systemd service
+                    draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
+                    draw.text((20, 80), "Updating via Git...", font=font_main, fill=(255, 255, 0))
+                    display.image(image, rotation=0)
+                    try:
+                        subprocess.run(['git', 'pull', 'origin', 'main'], cwd=os.path.join(BASE_DIR, '..', '..'), timeout=15)
+                    except Exception as e:
+                        print("Git pull failed:", e)
+                    
+                    draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
+                    draw.text((20, 100), "Restarting Service...", font=font_main, fill=(255, 0, 0))
+                    display.image(image, rotation=0)
+                    subprocess.Popen(['sudo', 'systemctl', 'restart', 'vtol-krti.service'])
+                    time.sleep(2)
+                elif setting_menu_idx == 7:
                     # Restart systemd service
                     draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
                     draw.text((20, 100), "Restarting Service...", font=font_main, fill=(255, 0, 0))
