@@ -162,6 +162,7 @@ def log_msg(msg, level="INFO"):
         pass
 
 def main():
+    print("🚀 Sedang menjalankan misi menuju WP2...")
     config = load_config()
     port = config.get('pixhawk_port', '/dev/ttyACM0')
     baud = config.get('pixhawk_baudrate', 115200)
