@@ -298,7 +298,7 @@ def main():
                             dist = calculate_distance(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
                             cv2.putText(display_frame, f"Dist WP5: {dist:.1f} m", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                             
-                            arrival_dist = 2.0 if use_aruco else 0.3
+                            arrival_dist = 2.0 if use_aruco else 0.05
                             if dist < arrival_dist:
                                 if use_aruco:
                                     log_msg(f"Mendekati WP5 (Jarak: {dist:.1f}m). Beralih ke pencarian ArUco!", "ACTION")

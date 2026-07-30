@@ -35,8 +35,8 @@ SensorPin sensorPins[NUM_SENSORS] = {
   {"BELAKANG", 5,  4},
   {"KANAN",    7, 6},
   {"KIRI",     1, 2},
-  {"ATAS",     38,  39},
-  {"BAWAH",    42, 41}
+  {"ATAS",     10,  11},
+  {"BAWAH",    13, 12}
 };
 
 // ================= KONFIGURASI TIMING =================
