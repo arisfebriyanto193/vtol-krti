@@ -17,6 +17,51 @@ import math
 from pymavlink import mavutil
 from sensor_reader import ESP32Reader
 
+import board
+import digitalio
+
+try:
+    import pwmio
+    servo_pwm = pwmio.PWMOut(board.D26, frequency=50)
+    
+    def set_servo_angle(angle):
+        min_duty = 1638
+        max_duty = 8192
+        angle = max(0, min(180, angle))
+        duty = min_duty + int((angle / 180.0) * (max_duty - min_duty))
+        servo_pwm.duty_cycle = duty
+except Exception as e:
+    print(f"Error init servo GPIO26: {e}")
+    def set_servo_angle(angle):
+        pass
+
+def detect_red_box(frame):
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    lower_red1 = np.array([0, 120, 70])
+    upper_red1 = np.array([10, 255, 255])
+    lower_red2 = np.array([170, 120, 70])
+    upper_red2 = np.array([180, 255, 255])
+    
+    mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+    mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+    mask = mask1 + mask2
+    
+    mask = cv2.erode(mask, None, iterations=2)
+    mask = cv2.dilate(mask, None, iterations=2)
+    
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    if len(contours) > 0:
+        c = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(c) > 1000:
+            M = cv2.moments(c)
+            if M["m00"] != 0:
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+                x, y, w, h = cv2.boundingRect(c)
+                return True, (cx, cy), (x, y, w, h)
+    return False, (0, 0), (0, 0, 0, 0)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.abspath(os.path.join(BASE_DIR, '..', 'config', 'krti_config.json'))
 
@@ -25,7 +70,7 @@ KP_XY = 0.0015
 MAX_SPEED = 0.3
 LOCK_TOLERANCE = 40
 STABLE_DURATION = 3.0
-TARGET_ID = 2  # Target ArUco ID untuk WP2
+TARGET_ID = 2  # Disimpan untuk berjaga-jaga jika di-enable lagi di masa depan
 ARUCO_DICT_TYPE = cv2.aruco.DICT_7X7_50
 
 # States
@@ -33,7 +78,7 @@ STATE_INIT = 0
 STATE_ROTATE_YAW = 1
 STATE_WAIT_ALT = 2   # Tunggu ketinggian stabil setelah yaw selesai
 STATE_GOTO_GPS = 3
-STATE_CENTER_ARUCO = 4
+STATE_CENTER_REDBOX = 4
 STATE_DONE = 5
 
 def load_config():
@@ -170,6 +215,9 @@ def main():
     use_aruco = config.get('use_aruco_verification', True)
     use_obstacle_avoidance = config.get('use_obstacle_avoidance', True)
     
+    servo_close = config.get('servo_close_angle', 0)
+    servo_open = config.get('servo_open_angle', 90)
+    
     team = config.get('team', 'Biru')
     wp_key = f'waypoints_{team}'
     wp_target = config.get(wp_key, {}).get('wp2', {})
@@ -183,6 +231,10 @@ def main():
         sys.exit(1)
 
     print(f"🎯 Target WP2: Lat {wp_target['lat']}, Lon {wp_target['lon']}, Yaw {wp_target['yaw']}")
+
+    # Tutup servo (Lock) sejak awal penerbangan ke WP2
+    set_servo_angle(servo_close)
+    log_msg(f"Servo dikunci pada sudut: {servo_close} derajat.", "INIT")
 
     # Mulai Web Dashboard
 
@@ -238,9 +290,6 @@ def main():
 
             h, w, _ = frame.shape
             cx_frame, cy_frame = w // 2, h // 2
-
-            if has_new_api: corners, ids, _ = detector.detectMarkers(frame)
-            else: corners, ids, _ = cv2.aruco.detectMarkers(frame, aruco_dict, parameters=aruco_params)
 
             display_frame = frame.copy()
             cv2.line(display_frame, (cx_frame - 20, cy_frame), (cx_frame + 20, cy_frame), (255, 0, 0), 2)
@@ -326,10 +375,10 @@ def main():
                             arrival_dist = 2.0 if use_aruco else 0.05
                             if dist < arrival_dist:
                                 if use_aruco:
-                                    log_msg(f"Mendekati WP2 (Jarak: {dist:.1f}m). Beralih ke STATE_CENTER_ARUCO.", "ACTION")
-                                    state = STATE_CENTER_ARUCO
+                                    log_msg(f"Mendekati WP2 (Jarak: {dist:.1f}m). Beralih ke STATE_CENTER_REDBOX.", "ACTION")
+                                    state = STATE_CENTER_REDBOX
                                 else:
-                                    log_msg(f"Tiba di WP2 (Jarak: {dist:.1f}m). ArUco NONAKTIF. SELESAI SEGMEN.", "ACTION")
+                                    log_msg(f"Tiba di WP2 (Jarak: {dist:.1f}m). Visual Centering NONAKTIF. SELESAI SEGMEN.", "ACTION")
                                     state = STATE_DONE
                             else:
                                 if time.time() - last_gps_cmd_time > 0.5:
@@ -337,14 +386,14 @@ def main():
                                     goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
                                     last_gps_cmd_time = time.time()
 
-                elif state == STATE_CENTER_ARUCO:
-                    state_str = "VISUAL CENTERING WP2"
-                    if ids is not None and TARGET_ID in ids:
-                        idx = np.where(ids == TARGET_ID)[0][0]
-                        points = corners[idx][0]
-                        cx = int(np.mean(points[:, 0]))
-                        cy = int(np.mean(points[:, 1]))
-                        cv2.aruco.drawDetectedMarkers(display_frame, [corners[idx]], np.array([[TARGET_ID]]))
+                elif state == STATE_CENTER_REDBOX:
+                    state_str = "VISUAL CENTERING RED BOX WP2"
+                    red_detected, red_center, red_box = detect_red_box(frame)
+                    
+                    if red_detected:
+                        cx, cy = red_center
+                        x, y, box_w, box_h = red_box
+                        cv2.rectangle(display_frame, (x, y), (x+box_w, y+box_h), (0, 255, 0), 3)
                         cv2.line(display_frame, (cx_frame, cy_frame), (cx, cy), (0, 255, 255), 2)
                         
                         err_x = cx - cx_frame
@@ -358,14 +407,17 @@ def main():
                         if is_locked:
                             if stable_start_time == 0: stable_start_time = time.time()
                             elif time.time() - stable_start_time > STABLE_DURATION:
-                                print("✅ ArUco WP2 Verified! SELESAI SEGMEN INI.")
+                                log_msg("✅ Red Box WP2 Verified! MEMBUKA SERVO...", "ACTION")
+                                set_servo_angle(servo_open)
+                                time.sleep(2.0)
+                                log_msg("✅ Payload Dropped! SELESAI SEGMEN INI.", "ACTION")
                                 state = STATE_DONE
                                 stable_start_time = 0
                         else:
                             stable_start_time = 0
                     else:
                         send_velocity(master, 0, 0, 0)
-                        cv2.putText(display_frame, f"MENCARI ARUCO ID {TARGET_ID}...", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        cv2.putText(display_frame, "MENCARI BOX MERAH...", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                 
                 elif state == STATE_DONE:
                     state_str = "SEGMEN SELESAI (HOVER)"
