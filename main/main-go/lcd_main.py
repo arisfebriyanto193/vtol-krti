@@ -44,6 +44,18 @@ drone_alt_px = 0.0
 drone_yaw = 0.0
 
 cap = None
+camera_running = False
+latest_frame = None
+
+def camera_worker():
+    global latest_frame, cap, camera_running
+    while camera_running and cap is not None and cap.isOpened():
+        ret, frame = cap.read()
+        if ret:
+            latest_frame = frame.copy()
+        else:
+            time.sleep(0.1)
+        time.sleep(0.05)
 
 # State Machine UI (dideklarasikan di sini agar tersedia sebelum thread dimulai)
 # 0 = Main Menu, 1 = Kalibrasi, 2 = Play Menu, 3 = Play per WP, 4 = Misi Berjalan
@@ -532,24 +544,17 @@ def render_test_servo():
     display.image(image, rotation=0)
 
 def render_camera_test():
-    global cap
-    if cap is not None and cap.isOpened():
-        ret, frame = cap.read()
-        if ret:
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame_resized = cv2.resize(frame_rgb, (WIDTH, HEIGHT))
-            cam_img = Image.fromarray(frame_resized)
-            draw_cam = ImageDraw.Draw(cam_img)
-            draw_cam.text((10, 220), "[OK] Kembali", font=font_small, fill=(255, 255, 255))
-            display.image(cam_img, rotation=0)
-        else:
-            draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
-            draw.text((20, 100), "Gagal baca frame", font=font_main, fill=(255, 0, 0))
-            draw.text((10, 220), "[OK] Kembali", font=font_small, fill=(180, 180, 180))
-            display.image(image, rotation=0)
+    global latest_frame
+    if latest_frame is not None:
+        frame_rgb = cv2.cvtColor(latest_frame, cv2.COLOR_BGR2RGB)
+        frame_resized = cv2.resize(frame_rgb, (WIDTH, HEIGHT))
+        cam_img = Image.fromarray(frame_resized)
+        draw_cam = ImageDraw.Draw(cam_img)
+        draw_cam.text((10, 220), "[OK] Kembali", font=font_small, fill=(255, 255, 255))
+        display.image(cam_img, rotation=0)
     else:
         draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
-        draw.text((20, 100), "Kamera Offline", font=font_main, fill=(255, 0, 0))
+        draw.text((20, 100), "Memuat Kamera / Error", font=font_main, fill=(255, 255, 0))
         draw.text((10, 220), "[OK] Kembali", font=font_small, fill=(180, 180, 180))
         display.image(image, rotation=0)
 
@@ -574,7 +579,7 @@ def loop_ui():
     global info_menu_idx, wifi_scan_idx, is_scanning, scanned_wifis, wifi_msg, wifi_msg_time
     global team_menu_idx, running_process, mission_finished, mission_finish_time
     global log_menu_idx, log_lines, setting_menu_idx, servo_calib_idx
-    global cap
+    global cap, camera_running, latest_frame
     
     prev_pressed = False
     next_pressed = False
@@ -683,6 +688,10 @@ def loop_ui():
                         cap = cv2.VideoCapture(idx)
                         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
                         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+                        
+                        camera_running = True
+                        latest_frame = None
+                        threading.Thread(target=camera_worker, daemon=True).start()
                     except Exception as e:
                         print("Gagal buka kamera:", e)
                     state = 20
@@ -808,10 +817,16 @@ def loop_ui():
                 else:
                     state = 11
             elif state == 20:
-                if cap is not None:
-                    cap.release()
-                    cap = None
                 state = 0
+                camera_running = False
+                
+                def release_cam():
+                    global cap
+                    if cap is not None:
+                        try: cap.release()
+                        except: pass
+                        cap = None
+                threading.Thread(target=release_cam, daemon=True).start()
 
         prev_pressed = btn_p
         next_pressed = btn_n
