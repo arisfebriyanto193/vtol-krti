@@ -4,6 +4,7 @@ import time
 import threading
 import subprocess
 import math
+import cv2
 
 import board
 import digitalio
@@ -42,11 +43,14 @@ drone_lon = 0.0
 drone_alt_px = 0.0
 drone_yaw = 0.0
 
+cap = None
+
 # State Machine UI (dideklarasikan di sini agar tersedia sebelum thread dimulai)
 # 0 = Main Menu, 1 = Kalibrasi, 2 = Play Menu, 3 = Play per WP, 4 = Misi Berjalan
 # 5 = Info & WiFi, 6 = WiFi Scanner, 7 = Ganti Tim, 8 = Menu Log, 9 = View Log
 # 10 = Test Sensor, 11 = Pengaturan, 12 = Edit Alt, 13 = Edit Speed
 # 16 = Test Servo, 17 = Kalibrasi Servo, 18 = Edit Sudut Buka, 19 = Edit Sudut Tutup
+# 20 = Test Kamera
 state = 0
 
 def load_config():
@@ -178,7 +182,7 @@ except IOError:
 
 # State Machine UI (lihat deklarasi state di bagian atas file)
 
-main_menu_items = ["Menu Kalibrasi", "Menu Play", "Pengaturan", "Ganti Tim", "Info & WiFi", "Lihat Log", "Test Sensor"]
+main_menu_items = ["Menu Kalibrasi", "Menu Play", "Pengaturan", "Ganti Tim", "Info & WiFi", "Lihat Log", "Test Sensor", "Test Kamera"]
 main_menu_idx = 0
 
 setting_menu_idx = 0
@@ -527,6 +531,28 @@ def render_test_servo():
     draw.text((10, 220), "[OK] Kembali", font=font_small, fill=(180, 180, 180))
     display.image(image, rotation=0)
 
+def render_camera_test():
+    global cap
+    if cap is not None and cap.isOpened():
+        ret, frame = cap.read()
+        if ret:
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame_resized = cv2.resize(frame_rgb, (WIDTH, HEIGHT))
+            cam_img = Image.fromarray(frame_resized)
+            draw_cam = ImageDraw.Draw(cam_img)
+            draw_cam.text((10, 220), "[OK] Kembali", font=font_small, fill=(255, 255, 255))
+            display.image(cam_img, rotation=0)
+        else:
+            draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
+            draw.text((20, 100), "Gagal baca frame", font=font_main, fill=(255, 0, 0))
+            draw.text((10, 220), "[OK] Kembali", font=font_small, fill=(180, 180, 180))
+            display.image(image, rotation=0)
+    else:
+        draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
+        draw.text((20, 100), "Kamera Offline", font=font_main, fill=(255, 0, 0))
+        draw.text((10, 220), "[OK] Kembali", font=font_small, fill=(180, 180, 180))
+        display.image(image, rotation=0)
+
 def _start_process_delayed(script_path):
     global running_process
     time.sleep(1.5) # Beri waktu agar koneksi serial dilepas oleh pixhawk_loop
@@ -548,6 +574,7 @@ def loop_ui():
     global info_menu_idx, wifi_scan_idx, is_scanning, scanned_wifis, wifi_msg, wifi_msg_time
     global team_menu_idx, running_process, mission_finished, mission_finish_time
     global log_menu_idx, log_lines, setting_menu_idx, servo_calib_idx
+    global cap
     
     prev_pressed = False
     next_pressed = False
@@ -650,6 +677,15 @@ def loop_ui():
                 elif main_menu_idx == 4: state = 5
                 elif main_menu_idx == 5: state = 8
                 elif main_menu_idx == 6: state = 10
+                elif main_menu_idx == 7:
+                    try:
+                        idx = config_data.get('camera_index', 0)
+                        cap = cv2.VideoCapture(idx)
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+                    except Exception as e:
+                        print("Gagal buka kamera:", e)
+                    state = 20
             elif state == 1:
                 handle_kalibrasi_save()
             elif state == 2:
@@ -746,14 +782,14 @@ def loop_ui():
                     draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
                     draw.text((20, 100), "Restarting Service...", font=font_main, fill=(255, 0, 0))
                     display.image(image, rotation=0)
-                    subprocess.Popen(['sudo', 'systemctl', 'restart', 'vtol-krti.service'])
+                    subprocess.Popen('echo "pi" | sudo -S systemctl restart vtol-krti.service', shell=True)
                     time.sleep(2)
                 elif setting_menu_idx == 9:
                     # Restart systemd service
                     draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
                     draw.text((20, 100), "Restarting Service...", font=font_main, fill=(255, 0, 0))
                     display.image(image, rotation=0)
-                    subprocess.Popen(['sudo', 'systemctl', 'restart', 'vtol-krti.service'])
+                    subprocess.Popen('echo "pi" | sudo -S systemctl restart vtol-krti.service', shell=True)
                     time.sleep(2)
                 else:
                     state = 0
@@ -771,6 +807,11 @@ def loop_ui():
                     set_servo_angle(config_data.get('servo_close_angle', 0))
                 else:
                     state = 11
+            elif state == 20:
+                if cap is not None:
+                    cap.release()
+                    cap = None
+                state = 0
 
         prev_pressed = btn_p
         next_pressed = btn_n
@@ -812,6 +853,7 @@ def loop_ui():
         elif state == 17: render_menu("Kalibrasi Servo", servo_calib_items, servo_calib_idx)
         elif state == 18: render_edit_val("Edit Sudut Buka", config_data.get('servo_open_angle', 90), "deg")
         elif state == 19: render_edit_val("Edit Sudut Tutup", config_data.get('servo_close_angle', 0), "deg")
+        elif state == 20: render_camera_test()
 
         time.sleep(0.1)
 
