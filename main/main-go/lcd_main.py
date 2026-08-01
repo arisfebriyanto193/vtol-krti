@@ -10,6 +10,21 @@ import digitalio
 import adafruit_rgb_display.ili9341 as ili9341
 from PIL import Image, ImageDraw, ImageFont
 
+try:
+    import pwmio
+    servo_pwm = pwmio.PWMOut(board.D26, frequency=50)
+    
+    def set_servo_angle(angle):
+        min_duty = 1638
+        max_duty = 8192
+        angle = max(0, min(180, angle))
+        duty = min_duty + int((angle / 180.0) * (max_duty - min_duty))
+        servo_pwm.duty_cycle = duty
+except Exception as e:
+    print(f"Error init servo GPIO26: {e}")
+    def set_servo_angle(angle):
+        pass
+
 from pymavlink import mavutil
 from sensor_reader import ESP32Reader
 
@@ -31,6 +46,7 @@ drone_yaw = 0.0
 # 0 = Main Menu, 1 = Kalibrasi, 2 = Play Menu, 3 = Play per WP, 4 = Misi Berjalan
 # 5 = Info & WiFi, 6 = WiFi Scanner, 7 = Ganti Tim, 8 = Menu Log, 9 = View Log
 # 10 = Test Sensor, 11 = Pengaturan, 12 = Edit Alt, 13 = Edit Speed
+# 16 = Test Servo, 17 = Kalibrasi Servo, 18 = Edit Sudut Buka, 19 = Edit Sudut Tutup
 state = 0
 
 def load_config():
@@ -166,6 +182,9 @@ main_menu_items = ["Menu Kalibrasi", "Menu Play", "Pengaturan", "Ganti Tim", "In
 main_menu_idx = 0
 
 setting_menu_idx = 0
+
+servo_calib_items = ["Sudut Terbuka", "Sudut Tertutup", "Kembali"]
+servo_calib_idx = 0
 
 team_menu_items = ["Biru", "Merah", "Kembali"]
 team_menu_idx = 0
@@ -464,6 +483,8 @@ def render_setting_menu():
         f"ESP: {esp.replace('/dev/', '')}",
         f"Aruco: {'ON' if aruco else 'OFF'}",
         f"Obstacle: {'ON' if obs else 'OFF'}",
+        "Test Servo",
+        "Kalibrasi Servo",
         "Update Git & Restart",
         "Restart Systemd",
         "Kembali"
@@ -477,6 +498,8 @@ def render_edit_val(title, val, unit):
     
     if isinstance(val, str):
         val_str = val
+    elif isinstance(val, int) and unit == "deg":
+        val_str = f"{val} {unit}"
     else:
         val_str = f"{val:.1f} {unit}"
         
@@ -484,6 +507,24 @@ def render_edit_val(title, val, unit):
     draw.text(((WIDTH - val_w) // 2, 100), val_str, font=font_main, fill=(0, 255, 0))
     
     draw.text((10, 200), "[Prev] -   [Next] +   [OK] Save", font=font_small, fill=(180, 180, 180))
+    display.image(image, rotation=0)
+
+def render_test_servo():
+    draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
+    title = "Test Servo GPIO26"
+    title_w, _ = get_text_size(title, font_main)
+    draw.text(((WIDTH - title_w) // 2, 5), title, font=font_main, fill=(0, 255, 255))
+    
+    draw.text((20, 50), "[Prev] -> Tutup Servo", font=font_main, fill=(255, 100, 100))
+    draw.text((20, 90), "[Next] -> Buka Servo", font=font_main, fill=(100, 255, 100))
+    
+    close_ang = config_data.get('servo_close_angle', 0)
+    open_ang = config_data.get('servo_open_angle', 90)
+    
+    draw.text((20, 150), f"Sudut Tutup: {close_ang} deg", font=font_small, fill=(255, 255, 255))
+    draw.text((20, 170), f"Sudut Buka: {open_ang} deg", font=font_small, fill=(255, 255, 255))
+    
+    draw.text((10, 220), "[OK] Kembali", font=font_small, fill=(180, 180, 180))
     display.image(image, rotation=0)
 
 def _start_process_delayed(script_path):
@@ -506,7 +547,7 @@ def loop_ui():
     global state, main_menu_idx, kalibrasi_idx, play_menu_idx, play_wp_idx
     global info_menu_idx, wifi_scan_idx, is_scanning, scanned_wifis, wifi_msg, wifi_msg_time
     global team_menu_idx, running_process, mission_finished, mission_finish_time
-    global log_menu_idx, log_lines, setting_menu_idx
+    global log_menu_idx, log_lines, setting_menu_idx, servo_calib_idx
     
     prev_pressed = False
     next_pressed = False
@@ -529,7 +570,7 @@ def loop_ui():
                     wifi_scan_idx = (wifi_scan_idx - 1) % len(scanned_wifis)
             elif state == 7: team_menu_idx = (team_menu_idx - 1) % len(team_menu_items)
             elif state == 8: log_menu_idx = (log_menu_idx - 1) % len(log_menu_items)
-            elif state == 11: setting_menu_idx = (setting_menu_idx - 1) % 9
+            elif state == 11: setting_menu_idx = (setting_menu_idx - 1) % 11
             elif state == 12:
                 alt = config_data.get('target_altitude', 1.0)
                 config_data['target_altitude'] = max(0.5, alt - 0.1)
@@ -546,6 +587,18 @@ def loop_ui():
                 curr = config_data.get('esp32_port', '/dev/ttyACM1')
                 idx = ports.index(curr) if curr in ports else 0
                 config_data['esp32_port'] = ports[(idx - 1) % len(ports)]
+            elif state == 16:
+                set_servo_angle(config_data.get('servo_close_angle', 0))
+            elif state == 17:
+                servo_calib_idx = (servo_calib_idx - 1) % len(servo_calib_items)
+            elif state == 18:
+                ang = config_data.get('servo_open_angle', 90)
+                config_data['servo_open_angle'] = max(0, ang - 5)
+                set_servo_angle(config_data['servo_open_angle'])
+            elif state == 19:
+                ang = config_data.get('servo_close_angle', 0)
+                config_data['servo_close_angle'] = max(0, ang - 5)
+                set_servo_angle(config_data['servo_close_angle'])
             
         if btn_n and not next_pressed:
             if state == 0: main_menu_idx = (main_menu_idx + 1) % len(main_menu_items)
@@ -558,7 +611,7 @@ def loop_ui():
                     wifi_scan_idx = (wifi_scan_idx + 1) % len(scanned_wifis)
             elif state == 7: team_menu_idx = (team_menu_idx + 1) % len(team_menu_items)
             elif state == 8: log_menu_idx = (log_menu_idx + 1) % len(log_menu_items)
-            elif state == 11: setting_menu_idx = (setting_menu_idx + 1) % 9
+            elif state == 11: setting_menu_idx = (setting_menu_idx + 1) % 11
             elif state == 12:
                 alt = config_data.get('target_altitude', 1.0)
                 config_data['target_altitude'] = min(5.0, alt + 0.1)
@@ -575,6 +628,18 @@ def loop_ui():
                 curr = config_data.get('esp32_port', '/dev/ttyACM1')
                 idx = ports.index(curr) if curr in ports else 0
                 config_data['esp32_port'] = ports[(idx + 1) % len(ports)]
+            elif state == 16:
+                set_servo_angle(config_data.get('servo_open_angle', 90))
+            elif state == 17:
+                servo_calib_idx = (servo_calib_idx + 1) % len(servo_calib_items)
+            elif state == 18:
+                ang = config_data.get('servo_open_angle', 90)
+                config_data['servo_open_angle'] = min(180, ang + 5)
+                set_servo_angle(config_data['servo_open_angle'])
+            elif state == 19:
+                ang = config_data.get('servo_close_angle', 0)
+                config_data['servo_close_angle'] = min(180, ang + 5)
+                set_servo_angle(config_data['servo_close_angle'])
             
         if btn_o and not ok_pressed:
             if state == 0:
@@ -665,6 +730,10 @@ def loop_ui():
                     config_data['use_obstacle_avoidance'] = not config_data.get('use_obstacle_avoidance', False)
                     save_config()
                 elif setting_menu_idx == 6:
+                    state = 16 # Test Servo
+                elif setting_menu_idx == 7:
+                    state = 17 # Kalibrasi Servo
+                elif setting_menu_idx == 8:
                     # Update via Git & Restart systemd service
                     draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
                     draw.text((20, 80), "Updating via Git...", font=font_main, fill=(255, 255, 0))
@@ -679,7 +748,7 @@ def loop_ui():
                     display.image(image, rotation=0)
                     subprocess.Popen(['sudo', 'systemctl', 'restart', 'vtol-krti.service'])
                     time.sleep(2)
-                elif setting_menu_idx == 7:
+                elif setting_menu_idx == 9:
                     # Restart systemd service
                     draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=(0, 0, 0))
                     draw.text((20, 100), "Restarting Service...", font=font_main, fill=(255, 0, 0))
@@ -688,9 +757,20 @@ def loop_ui():
                     time.sleep(2)
                 else:
                     state = 0
-            elif state in [12, 13, 14, 15]:
+            elif state in [12, 13, 14, 15, 18, 19]:
                 save_config()
+                state = 11 if state in [12, 13, 14, 15] else 17
+            elif state == 16:
                 state = 11
+            elif state == 17:
+                if servo_calib_idx == 0:
+                    state = 18
+                    set_servo_angle(config_data.get('servo_open_angle', 90))
+                elif servo_calib_idx == 1:
+                    state = 19
+                    set_servo_angle(config_data.get('servo_close_angle', 0))
+                else:
+                    state = 11
 
         prev_pressed = btn_p
         next_pressed = btn_n
@@ -728,6 +808,10 @@ def loop_ui():
         elif state == 13: render_edit_val("Edit Kecepatan", config_data.get('drone_speed', 0.5), "m/s")
         elif state == 14: render_edit_val("Pixhawk Port", config_data.get('pixhawk_port', '/dev/ttyACM0'), "")
         elif state == 15: render_edit_val("ESP32 Port", config_data.get('esp32_port', '/dev/ttyACM1'), "")
+        elif state == 16: render_test_servo()
+        elif state == 17: render_menu("Kalibrasi Servo", servo_calib_items, servo_calib_idx)
+        elif state == 18: render_edit_val("Edit Sudut Buka", config_data.get('servo_open_angle', 90), "deg")
+        elif state == 19: render_edit_val("Edit Sudut Tutup", config_data.get('servo_close_angle', 0), "deg")
 
         time.sleep(0.1)
 
