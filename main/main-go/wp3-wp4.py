@@ -90,14 +90,26 @@ def send_velocity(master, vx, vy, vz):
         0b0000111111000111, 0, 0, 0, vx, vy, vz, 0, 0, 0, 0, 0
     )
 
-def goto_gps_position(master, lat, lon, alt):
+def goto_gps_position(master, lat, lon, alt, yaw_deg=None):
     """Kirim target posisi GPS. Kecepatan diatur via send_change_speed()."""
     if master is None: return
+    
+    if yaw_deg is None:
+        type_mask = 0b0000111111111000  # Abaikan yaw
+        yaw_rad = 0.0
+    else:
+        type_mask = 0b0000101111111000  # Gunakan yaw (bit 10=0)
+        yaw_rad = 0.0 if yaw_deg is None else __import__('math').radians(yaw_deg)
+
     master.mav.set_position_target_global_int_send(
         0, master.target_system, master.target_component,
         mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-        0b0000111111111000, int(lat * 1e7), int(lon * 1e7), alt,
-        0, 0, 0, 0, 0, 0, 0, 0
+        type_mask,
+        int(lat * 1e7),
+        int(lon * 1e7),
+        alt,
+        0, 0, 0, 0, 0, 0,
+        yaw_rad, 0
     )
 
 def send_change_speed(master, speed_ms):
@@ -280,7 +292,8 @@ def main():
                             dist = calculate_distance(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
                             
                             arrival_dist = 2.0 if use_aruco else 0.05
-                            if dist < arrival_dist:
+                            yaw_diff = get_shortest_yaw_diff(cur_yaw, bearing) if cur_yaw else 999.0
+                            if dist < arrival_dist and yaw_diff < 15.0:
                                 if use_aruco:
                                     log_msg(f"Mendekati WP4 (Jarak: {dist:.1f}m). Beralih ke STATE_CENTER_ARUCO.", "ACTION")
                                     state = STATE_CENTER_ARUCO
@@ -290,7 +303,7 @@ def main():
                             else:
                                 if time.time() - last_gps_cmd_time > 0.5:
                                     log_msg(f"Mengirim GPS target. Jarak sisa: {dist:.1f}m | Kecepatan: {drone_speed}m/s", "NAV")
-                                    goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
+                                    goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt, yaw_deg=bearing)
                                     last_gps_cmd_time = time.time()
 
                 elif state == STATE_CENTER_ARUCO:
