@@ -308,12 +308,13 @@ def main():
 
                 elif state == STATE_CENTER_ARUCO:
                     state_str = "VISUAL CENTERING WP3"
-                    if ids is not None and TARGET_ID in ids:
-                        idx = np.where(ids == TARGET_ID)[0][0]
+                    if ids is not None and len(ids) > 0:
+                        idx = 0
+                        detected_id = ids[idx][0]
                         points = corners[idx][0]
                         cx = int(np.mean(points[:, 0]))
                         cy = int(np.mean(points[:, 1]))
-                        cv2.aruco.drawDetectedMarkers(display_frame, [corners[idx]], np.array([[TARGET_ID]]))
+                        cv2.aruco.drawDetectedMarkers(display_frame, [corners[idx]], np.array([[detected_id]]))
                         cv2.line(display_frame, (cx_frame, cy_frame), (cx, cy), (0, 255, 255), 2)
                         
                         err_x = cx - cx_frame
@@ -333,7 +334,7 @@ def main():
                         else: stable_start_time = 0
                     else:
                         send_velocity(master, 0, 0, 0)
-                        cv2.putText(display_frame, f"MENCARI ARUCO ID {TARGET_ID}...", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        cv2.putText(display_frame, "MENCARI ARUCO...", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                 
                 elif state == STATE_DONE:
                     state_str = "SEGMEN SELESAI (HOVER)"
