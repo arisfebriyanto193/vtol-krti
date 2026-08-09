@@ -1,0 +1,71 @@
+import serial
+import json
+import threading
+import time
+import re
+
+class ESP32Reader:
+    def __init__(self, port, baudrate=115200):
+        self.port = port
+        self.baudrate = baudrate
+        self.ser = None
+        self.latest_data = {
+            "sensors": {},
+            "problems": [],
+            "ts": 0
+        }
+        self.running = False
+        self.thread = None
+
+    def start(self):
+        try:
+            self.ser = serial.Serial(self.port, self.baudrate, timeout=2)
+            time.sleep(2) # Stabilisasi
+            self.ser.reset_input_buffer()
+            print(f"[ESP32] Terhubung ke {self.port}")
+            self.running = True
+            self.thread = threading.Thread(target=self._read_loop, daemon=True)
+            self.thread.start()
+        except serial.SerialException as e:
+            print(f"[ESP32 ERROR] Gagal membuka port {self.port}: {e}")
+
+    def _read_loop(self):
+        while self.running and self.ser and self.ser.is_open:
+            try:
+                line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                if line and not line.startswith("-"):
+                    # Extract sensor data format: KIRI: 10.5 cm
+                    matches = re.findall(r'([A-Z]+):\s*([-\d.]+)\s*cm', line)
+                    if matches:
+                        sensors_data = {}
+                        for key, val_str in matches:
+                            try:
+                                sensors_data[key] = {"distance_cm": float(val_str)}
+                            except ValueError:
+                                pass
+                        
+                        if sensors_data:
+                            self.latest_data["sensors"] = sensors_data
+                            self.latest_data["ts"] = time.time()
+            except Exception as e:
+                print(f"[ESP32 READ ERROR] {e}")
+                time.sleep(1)
+
+    def get_latest_data(self):
+        return self.latest_data
+
+    def get_bottom_distance(self):
+        """Mendapatkan jarak sensor bawah (untuk kalibrasi)"""
+        return self.get_distance("BAWAH", 0.0)
+
+    def get_distance(self, sensor_name, default_val=999.0):
+        """Mendapatkan jarak sensor tertentu (misal: DEPAN, BAWAH, KIRI, KANAN)"""
+        sensors = self.latest_data.get("sensors", {})
+        sensor_data = sensors.get(sensor_name, {})
+        dist = sensor_data.get("distance_cm")
+        return dist if dist is not None else default_val
+
+    def stop(self):
+        self.running = False
+        if self.ser and self.ser.is_open:
+            self.ser.close()

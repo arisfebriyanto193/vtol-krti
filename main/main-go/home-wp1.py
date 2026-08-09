@@ -141,6 +141,15 @@ def get_shortest_yaw_diff(current_yaw, target_yaw):
     if diff > 180: diff -= 360
     return abs(diff)
 
+def get_bearing(lat1, lon1, lat2, lon2):
+    dLon = math.radians(lon2 - lon1)
+    y = math.sin(dLon) * math.cos(math.radians(lat2))
+    x = math.cos(math.radians(lat1)) * math.sin(math.radians(lat2)) - \
+        math.sin(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.cos(dLon)
+    bearing = math.atan2(y, x)
+    return (math.degrees(bearing) + 360) % 360
+
+
 def calculate_distance(lat1, lon1, lat2, lon2):
     """Menghitung jarak haversine antara dua koordinat GPS dalam meter."""
     R = 6371000.0
@@ -259,63 +268,19 @@ def main():
                 last_gps_cmd_time = 0
             else:
                 if state == STATE_INIT:
-                    if cur_yaw is None:
+                    if cur_yaw is None or cur_lat is None or cur_lon is None:
                         if time.time() - last_log_time > 1.0:
-                            log_msg("Menunggu data telemetry Yaw dari Pixhawk...", "WAIT")
+                            log_msg("Menunggu data telemetry Yaw/GPS dari Pixhawk...", "WAIT")
                             last_log_time = time.time()
                     else:
-                        log_msg(f"Mode GUIDED aktif. Naik ke {target_alt}m & ROTASI YAW ke target {wp_target['yaw']:.1f} deg.", "ACTION")
-                        # Kirim perintah naik ke target altitude sekaligus
-                        if cur_lat and cur_lon:
-                            goto_gps_position(master, cur_lat, cur_lon, target_alt)
-                        rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
+                        bearing = get_bearing(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
+                        log_msg(f"Mode GUIDED aktif. Naik ke {target_alt}m & Yaw ke {bearing:.1f} deg sambil maju.", "ACTION")
+                        send_change_speed(master, drone_speed)
+                        goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
+                        rotate_to_yaw(master, cur_yaw, bearing)
                         last_yaw_cmd_time = time.time()
-                        state = STATE_ROTATE_YAW
-
-                elif state == STATE_ROTATE_YAW:
-                    state_str = "ROTASI YAW DI TEMPAT"
-                    if cur_yaw is not None:
-                        diff = get_shortest_yaw_diff(cur_yaw, wp_target['yaw'])
-                        
-                        if diff < 10.0: # Toleransi 10 derajat (lebih realistis)
-                            log_msg(f"Rotasi SELESAI (selisih {diff:.1f} deg). Menunggu ketinggian stabil...", "ACTION")
-                            state = STATE_WAIT_ALT
-                            alt_stable_start = 0
-                        else:
-                            # Re-send perintah maksimal tiap 3 detik (menghindari command spamming)
-                            if time.time() - last_yaw_cmd_time > 3.0:
-                                log_msg(f"Re-send Yaw cmd: Cur={cur_yaw:.1f}, Target={wp_target['yaw']:.1f}, Diff={diff:.1f}", "ACTION")
-                                rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
-                                last_yaw_cmd_time = time.time()
-
-                elif state == STATE_WAIT_ALT:
-                    state_str = "MENUNGGU YAW & ALT STABIL"
-                    cur_alt = drone_telemetry['alt']
-                    alt_diff = abs(cur_alt - target_alt)
-                    yaw_diff = get_shortest_yaw_diff(cur_yaw, wp_target['yaw']) if cur_yaw else 999
-                    yaw_ok = yaw_diff < 10.0  # Toleransi 10 derajat
-                    alt_ok = alt_diff < 0.3
-                    # Re-send yaw jika belum tercapai (pakai goto_gps position saja untuk hover, TANPA yaw override)
-                    if not yaw_ok and time.time() - last_yaw_cmd_time > 2.0:
-                        log_msg(f"Re-send Yaw di WAIT_ALT: Cur={cur_yaw:.1f}, Target={wp_target['yaw']:.1f}, Diff={yaw_diff:.1f}", "ACTION")
-                        rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
-                        last_yaw_cmd_time = time.time()
-                    # Hover di posisi saat ini + naik ke target alt (bitmask tidak override yaw)
-                    if cur_lat and cur_lon and time.time() - last_gps_cmd_time > 1.0:
-                        goto_gps_position(master, cur_lat, cur_lon, target_alt)
                         last_gps_cmd_time = time.time()
-                    if yaw_ok and alt_ok:
-                        if alt_stable_start == 0:
-                            alt_stable_start = time.time()
-                        elif time.time() - alt_stable_start > 1.5:
-                            log_msg(f"Yaw & Alt stabil (Yaw={cur_yaw:.1f}°, Alt={cur_alt:.2f}m). Mulai maju ke WP1!", "ACTION")
-                            send_change_speed(master, drone_speed)  # Set kecepatan sebelum maju
-                            state = STATE_GOTO_GPS
-                            last_gps_cmd_time = 0
-                    else:
-                        alt_stable_start = 0
-                        if time.time() - last_log_time > 0.9:  # Throttle log 1x/detik
-                            log_msg(f"Menunggu: YawOK={yaw_ok}({yaw_diff:.1f}deg) AltOK={alt_ok}(cur={cur_alt:.2f}m tgt={target_alt:.1f}m)", "WAIT")
+                        state = STATE_GOTO_GPS
 
                 elif state == STATE_GOTO_GPS:
                     front_dist_cm = esp_reader.get_distance("DEPAN", 999.0) if esp_reader else 999.0

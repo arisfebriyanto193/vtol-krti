@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Misi Navigasi Segmen: WP1 -> WP2
-Berputar (Yaw) di tempat terlebih dahulu, lalu maju menuju WP2.
+Misi Navigasi Segmen: WP2 -> WP3
+Berputar (Yaw) di tempat terlebih dahulu, lalu maju menuju WP3.
 """
 
 import os
@@ -17,74 +17,26 @@ import math
 from pymavlink import mavutil
 from sensor_reader import ESP32Reader
 
-import board
-import digitalio
-
-try:
-    import pwmio
-    servo_pwm = pwmio.PWMOut(board.D26, frequency=50)
-    
-    def set_servo_angle(angle):
-        min_duty = 1638
-        max_duty = 8192
-        angle = max(0, min(180, angle))
-        duty = min_duty + int((angle / 180.0) * (max_duty - min_duty))
-        servo_pwm.duty_cycle = duty
-except Exception as e:
-    print(f"Error init servo GPIO26: {e}")
-    def set_servo_angle(angle):
-        pass
-
-def detect_red_box(frame):
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    lower_red1 = np.array([0, 120, 70])
-    upper_red1 = np.array([10, 255, 255])
-    lower_red2 = np.array([170, 120, 70])
-    upper_red2 = np.array([180, 255, 255])
-    
-    mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
-    mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
-    mask = mask1 + mask2
-    
-    mask = cv2.erode(mask, None, iterations=2)
-    mask = cv2.dilate(mask, None, iterations=2)
-    
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    if len(contours) > 0:
-        c = max(contours, key=cv2.contourArea)
-        if cv2.contourArea(c) > 1000:
-            M = cv2.moments(c)
-            if M["m00"] != 0:
-                cx = int(M["m10"] / M["m00"])
-                cy = int(M["m01"] / M["m00"])
-                x, y, w, h = cv2.boundingRect(c)
-                return True, (cx, cy), (x, y, w, h)
-    return False, (0, 0), (0, 0, 0, 0)
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.abspath(os.path.join(BASE_DIR, '..', 'config', 'krti_config.json'))
 
-# Konfigurasi Control
 KP_XY = 0.0015
 MAX_SPEED = 0.3
 LOCK_TOLERANCE = 40
 STABLE_DURATION = 3.0
-TARGET_ID = 2  # Disimpan untuk berjaga-jaga jika di-enable lagi di masa depan
+TARGET_ID = 3  # Target ArUco ID untuk WP3
 ARUCO_DICT_TYPE = cv2.aruco.DICT_7X7_50
 
-# States
 STATE_INIT = 0
 STATE_ROTATE_YAW = 1
 STATE_WAIT_ALT = 2   # Tunggu ketinggian stabil setelah yaw selesai
 STATE_GOTO_GPS = 3
-STATE_CENTER_REDBOX = 4
+STATE_CENTER_ARUCO = 4
 STATE_DONE = 5
 
 def load_config():
     if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, 'r') as f:
-            return json.load(f)
+        with open(CONFIG_PATH, 'r') as f: return json.load(f)
     print(f"❌ ERROR: Konfigurasi tidak ditemukan di {CONFIG_PATH}")
     sys.exit(1)
 
@@ -135,8 +87,7 @@ def send_velocity(master, vx, vy, vz):
     master.mav.set_position_target_local_ned_send(
         0, master.target_system, master.target_component,
         mavutil.mavlink.MAV_FRAME_BODY_NED,
-        0b0000111111000111,
-        0, 0, 0, vx, vy, vz, 0, 0, 0, 0, 0
+        0b0000111111000111, 0, 0, 0, vx, vy, vz, 0, 0, 0, 0, 0
     )
 
 def goto_gps_position(master, lat, lon, alt):
@@ -145,10 +96,7 @@ def goto_gps_position(master, lat, lon, alt):
     master.mav.set_position_target_global_int_send(
         0, master.target_system, master.target_component,
         mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-        0b0000111111111000,  # Hanya posisi, abaikan velocity/yaw
-        int(lat * 1e7),
-        int(lon * 1e7),
-        alt,
+        0b0000111111111000, int(lat * 1e7), int(lon * 1e7), alt,
         0, 0, 0, 0, 0, 0, 0, 0
     )
 
@@ -158,9 +106,7 @@ def send_change_speed(master, speed_ms):
     master.mav.command_long_send(
         master.target_system, master.target_component,
         mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED, 0,
-        1,        # param1: 1 = ground speed
-        speed_ms, # param2: kecepatan dalam m/s
-        -1, 0, 0, 0, 0
+        1, speed_ms, -1, 0, 0, 0, 0
     )
 
 def rotate_to_yaw(master, current_yaw, target_yaw):
@@ -172,7 +118,6 @@ def rotate_to_yaw(master, current_yaw, target_yaw):
         diff = (target_yaw - current_yaw) % 360
         direction = 1 if diff <= 180 else -1
     
-    # MAV_CMD_CONDITION_YAW: param1: sudut, param2: kecepatan putar, param3: arah (-1 CCW, 1 CW), param4: relative=0/absolute=1
     master.mav.command_long_send(
         master.target_system, master.target_component,
         mavutil.mavlink.MAV_CMD_CONDITION_YAW, 0,
@@ -186,17 +131,7 @@ def get_shortest_yaw_diff(current_yaw, target_yaw):
     if diff > 180: diff -= 360
     return abs(diff)
 
-def get_bearing(lat1, lon1, lat2, lon2):
-    dLon = math.radians(lon2 - lon1)
-    y = math.sin(dLon) * math.cos(math.radians(lat2))
-    x = math.cos(math.radians(lat1)) * math.sin(math.radians(lat2)) - \
-        math.sin(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.cos(dLon)
-    bearing = math.atan2(y, x)
-    return (math.degrees(bearing) + 360) % 360
-
-
 def calculate_distance(lat1, lon1, lat2, lon2):
-    """Menghitung jarak haversine antara dua koordinat GPS dalam meter."""
     R = 6371000.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -204,23 +139,17 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-# --- Setup File Logger ---
-LOG_DIR = BASE_DIR
-LOG_FILE = os.path.join(LOG_DIR, 'wp1-wp2.log')
-
+LOG_FILE = os.path.join(BASE_DIR, 'wp2-wp3.log')
 def log_msg(msg, level="INFO"):
-    """Menulis pesan ke konsol dan ke file log dengan timestamp."""
     ts = time.strftime('%Y-%m-%d %H:%M:%S')
     line = f"[{ts}] [{level}] {msg}"
     print(line)
     try:
-        with open(LOG_FILE, 'a') as f:
-            f.write(line + '\n')
-    except Exception:
-        pass
+        with open(LOG_FILE, 'a') as f: f.write(line + '\n')
+    except Exception: pass
 
 def main():
-    print("🚀 Sedang menjalankan misi menuju WP2...")
+    print("🚀 Sedang menjalankan misi menuju WP3...")
     config = load_config()
     port = config.get('pixhawk_port', '/dev/ttyACM0')
     baud = config.get('pixhawk_baudrate', 115200)
@@ -228,26 +157,19 @@ def main():
     use_aruco = config.get('use_aruco_verification', True)
     use_obstacle_avoidance = config.get('use_obstacle_avoidance', True)
     
-    servo_close = config.get('servo_close_angle', 0)
-    servo_open = config.get('servo_open_angle', 90)
-    
     team = config.get('team', 'Biru')
     wp_key = f'waypoints_{team}'
-    wp_target = config.get(wp_key, {}).get('wp2', {})
+    wp_target = config.get(wp_key, {}).get('wp3', {})
     
     target_alt = wp_target.get('target_alt', config.get('target_altitude', 2.0))
     drone_speed = wp_target.get('speed', config.get('drone_speed', 1.5))
     global MAX_SPEED
     MAX_SPEED = wp_target.get('max_aruco_speed', config.get('max_aruco_speed', 0.3))
     if not wp_target.get('lat'):
-        print("❌ ERROR: Data WP2 belum dikalibrasi!")
+        print("❌ ERROR: Data WP3 belum dikalibrasi!")
         sys.exit(1)
 
-    print(f"🎯 Target WP2: Lat {wp_target['lat']}, Lon {wp_target['lon']}, Yaw {wp_target['yaw']}")
-
-    # Tutup servo (Lock) sejak awal penerbangan ke WP2
-    set_servo_angle(servo_close)
-    log_msg(f"Servo dikunci pada sudut: {servo_close} derajat.", "INIT")
+    print(f"🎯 Target WP3: Lat {wp_target['lat']}, Lon {wp_target['lon']}, Yaw {wp_target['yaw']}")
 
     # Mulai Web Dashboard
 
@@ -270,8 +192,8 @@ def main():
 
     aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT_TYPE)
     aruco_params = cv2.aruco.DetectorParameters()
-    has_new_api = hasattr(cv2.aruco, 'ArucoDetector')
-    if has_new_api: detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_params)
+    if hasattr(cv2.aruco, 'ArucoDetector'): detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_params)
+    else: detector = None
 
     state = STATE_INIT
     stable_start_time = 0
@@ -283,8 +205,8 @@ def main():
     last_yaw_cmd_time = 0
     last_gps_cmd_time = 0
 
-    log_msg(f"==== PROGRAM DIMULAI ==== Target WP2: Lat={wp_target['lat']}, Lon={wp_target['lon']}, Yaw={wp_target['yaw']}")
-    log_msg("Menunggu mode GUIDED untuk memulai rotasi ke WP2.")
+    log_msg(f"==== PROGRAM DIMULAI ==== Target WP3: Lat={wp_target['lat']}, Lon={wp_target['lon']}, Yaw={wp_target['yaw']}")
+    log_msg("Menunggu mode GUIDED untuk memulai rotasi ke WP3.")
     
     try:
         while True:
@@ -304,12 +226,14 @@ def main():
             h, w, _ = frame.shape
             cx_frame, cy_frame = w // 2, h // 2
 
+            if detector: corners, ids, _ = detector.detectMarkers(frame)
+            else: corners, ids, _ = cv2.aruco.detectMarkers(frame, aruco_dict, parameters=aruco_params)
+
             display_frame = frame.copy()
             cv2.line(display_frame, (cx_frame - 20, cy_frame), (cx_frame + 20, cy_frame), (255, 0, 0), 2)
             cv2.line(display_frame, (cx_frame, cy_frame - 20), (cx_frame, cy_frame + 20), (255, 0, 0), 2)
             
             state_str = ""
-
             if mode != "GUIDED":
                 state_str = "MENUNGGU MODE GUIDED"
                 state = STATE_INIT # Reset
@@ -317,19 +241,59 @@ def main():
                 last_gps_cmd_time = 0
             else:
                 if state == STATE_INIT:
-                    if cur_yaw is None or cur_lat is None or cur_lon is None:
+                    if cur_yaw is None:
                         if time.time() - last_log_time > 1.0:
-                            log_msg("Menunggu data telemetry Yaw/GPS dari Pixhawk...", "WAIT")
+                            log_msg("Menunggu data telemetry Yaw dari Pixhawk...", "WAIT")
                             last_log_time = time.time()
                     else:
-                        bearing = get_bearing(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
-                        log_msg(f"Mode GUIDED aktif. Naik ke {target_alt}m & Yaw ke {bearing:.1f} deg sambil maju.", "ACTION")
-                        send_change_speed(master, drone_speed)
-                        goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
-                        rotate_to_yaw(master, cur_yaw, bearing)
+                        log_msg(f"Mode GUIDED aktif. Naik ke {target_alt}m & ROTASI YAW ke target {wp_target['yaw']:.1f} deg.", "ACTION")
+                        if cur_lat and cur_lon:
+                            goto_gps_position(master, cur_lat, cur_lon, target_alt)
+                        rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
                         last_yaw_cmd_time = time.time()
+                        state = STATE_ROTATE_YAW
+
+                elif state == STATE_ROTATE_YAW:
+                    state_str = "ROTASI YAW DI TEMPAT"
+                    if cur_yaw is not None:
+                        diff = get_shortest_yaw_diff(cur_yaw, wp_target['yaw'])
+                        
+                        if diff < 10.0:
+                            log_msg(f"Rotasi SELESAI (selisih {diff:.1f} deg). Menunggu ketinggian stabil...", "ACTION")
+                            state = STATE_WAIT_ALT
+                            alt_stable_start = 0
+                        else:
+                            if time.time() - last_yaw_cmd_time > 3.0:
+                                log_msg(f"Re-send Yaw cmd: Cur={cur_yaw:.1f}, Target={wp_target['yaw']:.1f}, Diff={diff:.1f}", "ACTION")
+                                rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
+                                last_yaw_cmd_time = time.time()
+
+                elif state == STATE_WAIT_ALT:
+                    state_str = "MENUNGGU YAW & ALT STABIL"
+                    cur_alt = drone_telemetry['alt']
+                    alt_diff = abs(cur_alt - target_alt)
+                    yaw_diff = get_shortest_yaw_diff(cur_yaw, wp_target['yaw']) if cur_yaw else 999
+                    yaw_ok = yaw_diff < 10.0  # Toleransi 10 derajat
+                    alt_ok = alt_diff < 0.3
+                    if not yaw_ok and time.time() - last_yaw_cmd_time > 2.0:
+                        log_msg(f"Re-send Yaw di WAIT_ALT: Cur={cur_yaw:.1f}, Target={wp_target['yaw']:.1f}, Diff={yaw_diff:.1f}", "ACTION")
+                        rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
+                        last_yaw_cmd_time = time.time()
+                    if cur_lat and cur_lon and time.time() - last_gps_cmd_time > 1.0:
+                        goto_gps_position(master, cur_lat, cur_lon, target_alt)
                         last_gps_cmd_time = time.time()
-                        state = STATE_GOTO_GPS
+                    if yaw_ok and alt_ok:
+                        if alt_stable_start == 0:
+                            alt_stable_start = time.time()
+                        elif time.time() - alt_stable_start > 1.5:
+                            log_msg(f"Yaw & Alt stabil (Yaw={cur_yaw:.1f}°, Alt={cur_alt:.2f}m). Mulai maju ke WP3!", "ACTION")
+                            send_change_speed(master, drone_speed)
+                            state = STATE_GOTO_GPS
+                            last_gps_cmd_time = 0
+                    else:
+                        alt_stable_start = 0
+                        if time.time() - last_log_time > 0.9:
+                            log_msg(f"Menunggu: YawOK={yaw_ok}({yaw_diff:.1f}deg) AltOK={alt_ok}(cur={cur_alt:.2f}m tgt={target_alt:.1f}m)", "WAIT")
 
                 elif state == STATE_GOTO_GPS:
                     front_dist_cm = esp_reader.get_distance("DEPAN", 999.0) if esp_reader else 999.0
@@ -342,17 +306,17 @@ def main():
                         last_gps_cmd_time = 0
                         cv2.putText(display_frame, f"OBSTACLE: {front_dist_cm} cm", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                     else:
-                        state_str = "NAVIGASI MAJU (GPS) -> WP2"
+                        state_str = "NAVIGASI MAJU (GPS) -> WP3"
                         if cur_lat and cur_lon:
                             dist = calculate_distance(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
                             
                             arrival_dist = 2.0 if use_aruco else 0.05
                             if dist < arrival_dist:
                                 if use_aruco:
-                                    log_msg(f"Mendekati WP2 (Jarak: {dist:.1f}m). Beralih ke STATE_CENTER_REDBOX.", "ACTION")
-                                    state = STATE_CENTER_REDBOX
+                                    log_msg(f"Mendekati WP3 (Jarak: {dist:.1f}m). Beralih ke STATE_CENTER_ARUCO.", "ACTION")
+                                    state = STATE_CENTER_ARUCO
                                 else:
-                                    log_msg(f"Tiba di WP2 (Jarak: {dist:.1f}m). Visual Centering NONAKTIF. SELESAI SEGMEN.", "ACTION")
+                                    log_msg(f"Tiba di WP3 (Jarak: {dist:.1f}m). ArUco NONAKTIF. SELESAI SEGMEN.", "ACTION")
                                     state = STATE_DONE
                             else:
                                 if time.time() - last_gps_cmd_time > 0.5:
@@ -360,14 +324,14 @@ def main():
                                     goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt)
                                     last_gps_cmd_time = time.time()
 
-                elif state == STATE_CENTER_REDBOX:
-                    state_str = "VISUAL CENTERING RED BOX WP2"
-                    red_detected, red_center, red_box = detect_red_box(frame)
-                    
-                    if red_detected:
-                        cx, cy = red_center
-                        x, y, box_w, box_h = red_box
-                        cv2.rectangle(display_frame, (x, y), (x+box_w, y+box_h), (0, 255, 0), 3)
+                elif state == STATE_CENTER_ARUCO:
+                    state_str = "VISUAL CENTERING WP3"
+                    if ids is not None and TARGET_ID in ids:
+                        idx = np.where(ids == TARGET_ID)[0][0]
+                        points = corners[idx][0]
+                        cx = int(np.mean(points[:, 0]))
+                        cy = int(np.mean(points[:, 1]))
+                        cv2.aruco.drawDetectedMarkers(display_frame, [corners[idx]], np.array([[TARGET_ID]]))
                         cv2.line(display_frame, (cx_frame, cy_frame), (cx, cy), (0, 255, 255), 2)
                         
                         err_x = cx - cx_frame
@@ -381,17 +345,13 @@ def main():
                         if is_locked:
                             if stable_start_time == 0: stable_start_time = time.time()
                             elif time.time() - stable_start_time > STABLE_DURATION:
-                                log_msg("✅ Red Box WP2 Verified! MEMBUKA SERVO...", "ACTION")
-                                set_servo_angle(servo_open)
-                                time.sleep(2.0)
-                                log_msg("✅ Payload Dropped! SELESAI SEGMEN INI.", "ACTION")
+                                print("✅ ArUco WP3 Verified! SELESAI SEGMEN INI.")
                                 state = STATE_DONE
                                 stable_start_time = 0
-                        else:
-                            stable_start_time = 0
+                        else: stable_start_time = 0
                     else:
                         send_velocity(master, 0, 0, 0)
-                        cv2.putText(display_frame, "MENCARI BOX MERAH...", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                        cv2.putText(display_frame, f"MENCARI ARUCO ID {TARGET_ID}...", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                 
                 elif state == STATE_DONE:
                     state_str = "SEGMEN SELESAI (HOVER)"
@@ -410,7 +370,7 @@ def main():
                 cv2.putText(display_frame, f"Cur Yaw: {cur_yaw:.1f} / Target: {wp_target['yaw']:.1f}", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             cv2.putText(display_frame, f"MODE : {mode}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv2.putText(display_frame, f"STATE: {state_str}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            # cv2.imshow("Navigasi WP1->WP2", display_frame) # Dinonaktifkan untuk Headless mode
+            # cv2.imshow("Navigasi WP2->WP3", display_frame) # Headless mode
 
 
             master.mav.heartbeat_send(
@@ -420,11 +380,9 @@ def main():
 
             if not use_aruco:
                 time.sleep(0.05)
-            # if cv2.waitKey(1) & 0xFF == ord('q'):
-            #     break
+            # if cv2.waitKey(1) & 0xFF == ord('q'): break
 
-    except KeyboardInterrupt:
-        pass
+    except KeyboardInterrupt: pass
     finally:
         try: send_velocity(master, 0, 0, 0)
         except: pass
