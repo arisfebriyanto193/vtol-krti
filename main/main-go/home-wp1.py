@@ -117,14 +117,24 @@ def goto_gps_position(master, lat, lon, alt, yaw_deg=None):
     )
 
 def send_change_speed(master, speed_ms):
-    """Set kecepatan navigasi drone via MAV_CMD_DO_CHANGE_SPEED."""
+    """Set kecepatan navigasi drone via MAV_CMD_DO_CHANGE_SPEED dan Parameter."""
     if master is None: return
+    
+    # 1. Cara standar MAVLink (berlaku untuk AUTO mode)
     master.mav.command_long_send(
         master.target_system, master.target_component,
         mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED, 0,
         1,        # param1: 1 = ground speed
         speed_ms, # param2: kecepatan dalam m/s
         -1, 0, 0, 0, 0
+    )
+    
+    # 2. Cara spesifik ArduCopter untuk GUIDED mode (WPNAV_SPEED dalam cm/s)
+    master.mav.param_set_send(
+        master.target_system, master.target_component,
+        b'WPNAV_SPEED',
+        speed_ms * 100.0,
+        mavutil.mavlink.MAV_PARAM_TYPE_REAL32
     )
 
 def rotate_to_yaw(master, current_yaw, target_yaw):
