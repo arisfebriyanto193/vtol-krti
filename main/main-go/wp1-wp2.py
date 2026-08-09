@@ -316,7 +316,9 @@ def main():
 
             if use_aruco and cap is not None:
                 ret, frame = cap.read()
-                if not ret: continue
+                if not ret:
+                    # Jangan skip state machine! Gunakan frame kosong jika kamera gagal baca
+                    frame = np.zeros((480, 640, 3), dtype=np.uint8)
             else:
                 frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
@@ -438,8 +440,8 @@ def main():
                 mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0
             )
 
-            if not use_aruco:
-                time.sleep(0.05)
+            # Minimal sleep agar loop tidak membebani CPU dan heartbeat terkirim stabil
+            time.sleep(0.03)
             # if cv2.waitKey(1) & 0xFF == ord('q'):
             #     break
 
