@@ -335,7 +335,18 @@ def main():
                                 stable_start_time = 0
                         else: stable_start_time = 0
                     else:
-                        send_velocity(master, 0, 0, 0)
+                        # Jika ArUco tidak terdeteksi, tetap maju ke koordinat GPS target agar lebih dekat
+                        if cur_lat and cur_lon:
+                            dist = calculate_distance(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
+                            if dist > 0.4:
+                                if time.time() - last_gps_cmd_time > 0.5:
+                                    bearing = get_bearing(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
+                                    goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt, yaw_deg=bearing)
+                                    last_gps_cmd_time = time.time()
+                            else:
+                                send_velocity(master, 0, 0, 0)
+                        else:
+                            send_velocity(master, 0, 0, 0)
                         cv2.putText(display_frame, "MENCARI ARUCO...", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                 
                 elif state == STATE_DONE:
