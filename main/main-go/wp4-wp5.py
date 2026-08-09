@@ -110,12 +110,19 @@ def send_change_speed(master, speed_ms):
         1, speed_ms, -1, 0, 0, 0, 0
     )
 
-def rotate_to_yaw(master, cur_yaw, target_yaw):
+def rotate_to_yaw(master, current_yaw, target_yaw):
+    """Mengirim perintah berputar ke sudut yaw (absolute) dengan rute terpendek"""
     if master is None: return
+    if current_yaw is None:
+        direction = 1
+    else:
+        diff = (target_yaw - current_yaw) % 360
+        direction = 1 if diff <= 180 else -1
+    
     master.mav.command_long_send(
         master.target_system, master.target_component,
         mavutil.mavlink.MAV_CMD_CONDITION_YAW, 0,
-        target_yaw, 15, 1, 0, 0, 0, 0
+        target_yaw, 15, direction, 0, 0, 0, 0
     )
 
 def land_drone(master):
@@ -128,6 +135,8 @@ def land_drone(master):
     )
 
 def get_shortest_yaw_diff(current_yaw, target_yaw):
+    if current_yaw is None:
+        return 999.0
     diff = (target_yaw - current_yaw) % 360
     if diff > 180: diff -= 360
     return abs(diff)
@@ -239,11 +248,16 @@ def main():
                 state = STATE_INIT
             else:
                 if state == STATE_INIT:
-                    log_msg(f"Mode GUIDED aktif. Naik ke {target_alt}m & ROTASI YAW ke target {wp_target['yaw']:.1f} deg.", "ACTION")
-                    if cur_lat and cur_lon:
-                        goto_gps_position(master, cur_lat, cur_lon, target_alt)
-                    rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
-                    state = STATE_ROTATE_YAW
+                    if cur_yaw is None:
+                        if time.time() - last_log_time > 1.0:
+                            log_msg("Menunggu data telemetry Yaw dari Pixhawk...", "WAIT")
+                            last_log_time = time.time()
+                    else:
+                        log_msg(f"Mode GUIDED aktif. Naik ke {target_alt}m & ROTASI YAW ke target {wp_target['yaw']:.1f} deg.", "ACTION")
+                        if cur_lat and cur_lon:
+                            goto_gps_position(master, cur_lat, cur_lon, target_alt)
+                        rotate_to_yaw(master, cur_yaw, wp_target['yaw'])
+                        state = STATE_ROTATE_YAW
 
                 elif state == STATE_ROTATE_YAW:
                     state_str = "ROTASI YAW DI TEMPAT"
