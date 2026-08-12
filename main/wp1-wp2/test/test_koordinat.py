@@ -2,6 +2,8 @@
 import sys
 import cv2
 import numpy as np
+import time
+from pymavlink import mavutil
 
 # Force UTF-8 output agar karakter unicode muncul di terminal Windows
 if sys.stdout.encoding != 'utf-8':
@@ -10,7 +12,35 @@ if sys.stdout.encoding != 'utf-8':
 # ================= KONFIGURASI =================
 CAMERA_INDEX   = 1    # Ganti ke 2 jika kamera yang terlihat bukan yang tepat
 LOCK_TOLERANCE = 40   # Toleransi piksel untuk status LOCKED
+KP_XY          = 0.0015 # Konstanta Proportional untuk kecepatan (PID)
+MAX_SPEED      = 0.3  # Kecepatan maksimal (m/s)
+PIXHAWK_PORT   = '/dev/ttyACM0' # Sesuaikan dengan port Pixhawk (misal: COM3 jika di Windows, /dev/ttyACM0 di Raspberry Pi)
+PIXHAWK_BAUD   = 115200
 # ===============================================
+
+def connect_pixhawk():
+    print(f"[INFO] Menghubungkan ke Pixhawk di {PIXHAWK_PORT} ({PIXHAWK_BAUD})...")
+    try:
+        master = mavutil.mavlink_connection(PIXHAWK_PORT, baud=PIXHAWK_BAUD)
+        master.wait_heartbeat(timeout=5)
+        if master.target_system == 0:
+            print("[WARNING] Tidak ada heartbeat dari Pixhawk! Pastikan port benar.")
+            return None
+        print("✅ Berhasil Terhubung ke Pixhawk!")
+        return master
+    except Exception as e:
+        print(f"❌ Gagal konek ke Pixhawk: {e}")
+        return None
+
+def send_velocity(master, vx, vy, vz):
+    if master is None: return
+    # Kirim kecepatan NED (North, East, Down). Karena MAV_FRAME_BODY_NED, x=Maju, y=Kanan
+    master.mav.set_position_target_local_ned_send(
+        0, master.target_system, master.target_component,
+        mavutil.mavlink.MAV_FRAME_BODY_NED,
+        0b0000111111000111, # Abaikan posisi dan yaw, gunakan velocity
+        0, 0, 0, vx, vy, vz, 0, 0, 0, 0, 0
+    )
 
 def draw_overlay(frame, cx, cy, marker_id, error_x, error_y, is_locked,
                  center_x_frame, center_y_frame):
@@ -57,6 +87,11 @@ def draw_overlay(frame, cx, cy, marker_id, error_x, error_y, is_locked,
 
 
 def main():
+    # 1. Hubungkan Pixhawk
+    master = connect_pixhawk()
+    if master is None:
+        print("[WARNING] Berjalan TANPA pergerakan drone (Hanya Visual) karena Pixhawk tidak terhubung.")
+    
     cap = cv2.VideoCapture(CAMERA_INDEX)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
@@ -113,17 +148,30 @@ def main():
                 error_y   = cy - center_y_frame
                 is_locked = abs(error_x) < LOCK_TOLERANCE and abs(error_y) < LOCK_TOLERANCE
 
+                # --- KONTROL PERGERAKAN DRONE ---
+                # Ingat: Kamera menghadap bawah.
+                # error_y positif (target di bawah frame) = target di belakang drone = mundur (vx negatif)
+                # error_x positif (target di kanan frame) = target di kanan drone = geser kanan (vy positif)
+                vx = np.clip(-1.0 * error_y * KP_XY, -MAX_SPEED, MAX_SPEED)
+                vy = np.clip(1.0 * error_x * KP_XY, -MAX_SPEED, MAX_SPEED)
+                
+                # Kirim perintah gerak jika Pixhawk terhubung
+                send_velocity(master, vx, vy, 0.0)
+
                 # Gambar overlay visual
                 frame = draw_overlay(frame, cx, cy, marker_id, error_x, error_y,
                                      is_locked, center_x_frame, center_y_frame)
 
                 # Print ke terminal
                 status = "[LOCKED]  " if is_locked else "[TRACKING]"
-                print(f"{status} ID:{marker_id} | X:{cx} Y:{cy} | dX:{error_x:+d} dY:{error_y:+d}")
+                print(f"{status} ID:{marker_id} | dX:{error_x:+d} dY:{error_y:+d} | vX:{vx:+.2f} vY:{vy:+.2f}")
 
             else:
-                # Tidak ada marker — tampilkan pesan di frame
-                cv2.putText(frame, "Mencari marker 7x7...",
+                # Tidak ada marker — drone diam (Hover)
+                send_velocity(master, 0.0, 0.0, 0.0)
+                
+                # Tampilkan pesan di frame
+                cv2.putText(frame, "Mencari marker 7x7... (Hover)",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                 # Crosshair tetap ditampilkan
                 cv2.line(frame, (center_x_frame - 20, center_y_frame),
@@ -141,6 +189,7 @@ def main():
     except KeyboardInterrupt:
         print("\n[STOP] Program dihentikan.")
     finally:
+        send_velocity(master, 0.0, 0.0, 0.0) # Pastikan drone hover saat script mati
         cap.release()
         cv2.destroyAllWindows()
 
