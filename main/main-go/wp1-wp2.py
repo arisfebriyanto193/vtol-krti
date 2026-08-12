@@ -66,8 +66,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.abspath(os.path.join(BASE_DIR, '..', 'config', 'krti_config.json'))
 
 # Konfigurasi Control
-KP_XY = 0.0015
-MAX_SPEED = 0.3
+# Konfigurasi Control
+KP_XY = 0.0035
+MAX_SPEED = 0.6
 LOCK_TOLERANCE = 40
 STABLE_DURATION = 3.0
 TARGET_ID = 2  # Disimpan untuk berjaga-jaga jika di-enable lagi di masa depan
@@ -257,7 +258,9 @@ def main():
     target_alt = wp_target.get('target_alt', config.get('target_altitude', 2.0))
     drone_speed = wp_target.get('speed', config.get('drone_speed', 1.5))
     global MAX_SPEED
-    MAX_SPEED = wp_target.get('max_aruco_speed', config.get('max_aruco_speed', 0.3))
+    MAX_SPEED = wp_target.get('max_aruco_speed', config.get('max_aruco_speed', 0.6))
+    if MAX_SPEED < 0.6:
+        MAX_SPEED = 0.6  # Paksa minimal 0.6 m/s agar drone kuat melawan angin
     if not wp_target.get('lat'):
         print("❌ ERROR: Data WP2 belum dikalibrasi!")
         sys.exit(1)
@@ -377,7 +380,7 @@ def main():
                                     log_msg(f"Tiba di WP2 (Jarak: {dist:.1f}m). Visual Centering NONAKTIF. SELESAI SEGMEN.", "ACTION")
                                     state = STATE_DONE
                             else:
-                                if time.time() - last_gps_cmd_time > 0.5:
+                                if time.time() - last_gps_cmd_time > 3.0:
                                     log_msg(f"Mengirim GPS target. Jarak sisa: {dist:.1f}m | Kecepatan: {drone_speed}m/s", "NAV")
                                     goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt, yaw_deg=bearing)
                                     last_gps_cmd_time = time.time()
@@ -416,7 +419,7 @@ def main():
                         if cur_lat and cur_lon:
                             dist = calculate_distance(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
                             if dist > 0.4:
-                                if time.time() - last_gps_cmd_time > 0.5:
+                                if time.time() - last_gps_cmd_time > 3.0:
                                     bearing = get_bearing(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
                                     goto_gps_position(master, wp_target['lat'], wp_target['lon'], target_alt, yaw_deg=bearing)
                                     last_gps_cmd_time = time.time()
