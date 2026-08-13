@@ -268,8 +268,8 @@ def main():
     print(f"🎯 Target WP2: Lat {wp_target['lat']}, Lon {wp_target['lon']}, Yaw {wp_target['yaw']}")
 
     # Tutup servo (Lock) sejak awal penerbangan ke WP2
-    # set_servo_angle(servo_close) # DINONAKTIFKAN agar servo tidak menyentak dan menjatuhkan barang di WP1
-    log_msg(f"Servo (D26) tidak disentak. Menunggu tiba di WP2...", "INIT")
+    set_servo_angle(servo_close)
+    log_msg(f"Servo dikunci pada sudut: {servo_close} derajat.", "INIT")
 
     # Mulai Web Dashboard
 
