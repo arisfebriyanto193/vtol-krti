@@ -20,20 +20,27 @@ from sensor_reader import ESP32Reader
 import board
 import digitalio
 
-try:
-    import pwmio
-    servo_pwm = pwmio.PWMOut(board.D26, frequency=50)
-    
-    def set_servo_angle(angle):
+servo_pwm = None
+def set_servo_angle(angle):
+    global servo_pwm
+    try:
+        import board
+        import pwmio
         min_duty = 1638
         max_duty = 8192
         angle = max(0, min(180, angle))
         duty = min_duty + int((angle / 180.0) * (max_duty - min_duty))
-        servo_pwm.duty_cycle = duty
-except Exception as e:
-    print(f"Error init servo GPIO26: {e}")
-    def set_servo_angle(angle):
-        pass
+        
+        if servo_pwm is None:
+            # Inisialisasi pin PWM pertama kali LANGSUNG dengan duty cycle target
+            servo_pwm = pwmio.PWMOut(board.D26, frequency=50, duty_cycle=duty)
+        else:
+            servo_pwm.duty_cycle = duty
+    except Exception as e:
+        # Hanya print error sekali jika tidak bisa inisialisasi (bukan di Raspberry Pi)
+        if servo_pwm is None:
+            print(f"Bypass Servo (Hardware tidak mendukung): {e}")
+            servo_pwm = "dummy"
 
 def detect_red_box(frame):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -268,8 +275,8 @@ def main():
     print(f"🎯 Target WP2: Lat {wp_target['lat']}, Lon {wp_target['lon']}, Yaw {wp_target['yaw']}")
 
     # Tutup servo (Lock) sejak awal penerbangan ke WP2
-    # set_servo_angle(servo_close) # DINONAKTIFKAN agar servo tidak menyentak dan menjatuhkan barang di WP1
-    log_msg(f"Servo (D26) tidak disentak. Menunggu tiba di WP2...", "INIT")
+    set_servo_angle(servo_close) # Diaktifkan kembali. Sekarang aman karena sudah pakai Lazy Init yang anti-sentak.
+    log_msg(f"Servo dikunci tegas pada sudut: {servo_close} derajat.", "INIT")
 
     # Mulai Web Dashboard
 
