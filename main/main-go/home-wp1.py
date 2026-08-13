@@ -321,7 +321,7 @@ def main():
                         if cur_lat and cur_lon:
                             dist = calculate_distance(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
                             
-                            arrival_dist = 2.0 if use_aruco else 0.05
+                            arrival_dist = 2.0 if use_aruco else 0.5
                             yaw_diff = get_shortest_yaw_diff(cur_yaw, bearing) if cur_yaw else 999.0
                             if dist < arrival_dist and yaw_diff < 15.0:
                                 if use_aruco:

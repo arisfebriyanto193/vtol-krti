@@ -370,14 +370,17 @@ def main():
                         if cur_lat and cur_lon:
                             dist = calculate_distance(cur_lat, cur_lon, wp_target['lat'], wp_target['lon'])
                             
-                            arrival_dist = 2.0 if use_aruco else 0.05
+                            arrival_dist = 2.0 if use_aruco else 0.5
                             yaw_diff = get_shortest_yaw_diff(cur_yaw, bearing) if cur_yaw else 999.0
                             if dist < arrival_dist and yaw_diff < 15.0:
                                 if use_aruco:
                                     log_msg(f"Mendekati WP2 (Jarak: {dist:.1f}m). Beralih ke STATE_CENTER_REDBOX.", "ACTION")
                                     state = STATE_CENTER_REDBOX
                                 else:
-                                    log_msg(f"Tiba di WP2 (Jarak: {dist:.1f}m). Visual Centering NONAKTIF. SELESAI SEGMEN.", "ACTION")
+                                    log_msg(f"Tiba di WP2 (Jarak: {dist:.1f}m). Navigasi Murni GPS. MEMBUKA SERVO...", "ACTION")
+                                    set_servo_angle(servo_open)
+                                    time.sleep(2.0)
+                                    log_msg("✅ Payload Dropped! SELESAI SEGMEN INI.", "ACTION")
                                     state = STATE_DONE
                             else:
                                 if time.time() - last_gps_cmd_time > 3.0:
