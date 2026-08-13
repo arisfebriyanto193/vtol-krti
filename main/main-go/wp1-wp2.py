@@ -275,8 +275,9 @@ def main():
     print(f"🎯 Target WP2: Lat {wp_target['lat']}, Lon {wp_target['lon']}, Yaw {wp_target['yaw']}")
 
     # Tutup servo (Lock) sejak awal penerbangan ke WP2
-    set_servo_angle(servo_close) # Diaktifkan kembali. Sekarang aman karena sudah pakai Lazy Init yang anti-sentak.
-    log_msg(f"Servo dikunci tegas pada sudut: {servo_close} derajat.", "INIT")
+    # DINONAKTIFKAN TOTAL: Jangan pernah mengirim sinyal ke servo di awal script!
+    # set_servo_angle(servo_close) 
+    log_msg(f"Servo (D26) dibiarkan tidur. Menunggu tiba di WP2...", "INIT")
 
     # Mulai Web Dashboard
 
